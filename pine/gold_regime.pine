@@ -30,12 +30,16 @@ useVol   = input.bool(false, "Require volume participation", group = gFlt, inlin
 volLen   = input.int(20, "len", minval = 1,                  group = gFlt, inline = "v")
 volMult  = input.float(1.0, "×", minval = 0.1, step = 0.1,   group = gFlt, inline = "v")
 needReg  = input.bool(false, "Trigger must agree with regime", group = gFlt)
-cooldown = input.int(3, "Cooldown bars between same-side triggers", minval = 0, group = gFlt)
+cooldown = input.int(8, "Cooldown bars between same-side triggers", minval = 0, group = gFlt,
+     tooltip = "Kills the clusters where the same signal repeats within a couple of bars. Lower it for more triggers, raise it for fewer.")
+minPush  = input.float(0.25, "Min push past the baseline (ATR)", minval = 0, step = 0.05, group = gFlt,
+     tooltip = "Price has to clear the confirmation baseline by this much for the flip to count, so a cross that only grazes it is ignored. The other dial for trigger frequency.")
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
 paintBar = input.bool(true,  "Recolour candles",             group = gSty)
-solidBod = input.bool(false, "Solid bodies",                 group = gSty)
+solidBod = input.bool(true,  "Solid bodies",                 group = gSty,
+     tooltip = "Paints body, border and wick in the regime colour, so every candle reads gold or gray whatever the chart's own candle styling is. Turn it off to fall back to barcolor only.")
 goldCol  = input.color(#C9A227, "Gold regime", group = gSty, inline = "rc")
 grayCol  = input.color(#9AA0A6, "Gray regime", group = gSty, inline = "rc")
 showStar = input.bool(true, "Show stars",                    group = gSty)
@@ -86,8 +90,9 @@ rsiBullOk = not useRsi or rsi > rsiMid
 rsiBearOk = not useRsi or rsi < rsiMid
 
 // momentum flip + price confirms against the short baseline
-bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa and rsiBullOk and volOk and (not needReg or gold)
-bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa and rsiBearOk and volOk and (not needReg or not gold)
+push      = atr * minPush
+bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa + push and rsiBullOk and volOk and (not needReg or gold)
+bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa - push and rsiBearOk and volOk and (not needReg or not gold)
 
 var int lastBull = -99999
 var int lastBear = -99999
