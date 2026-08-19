@@ -6,7 +6,11 @@
 //  while price stays in balance, and stops only after a confirmed break.
 //    Inside the zone = chop. Fade the edges, smaller size, quicker profits.
 //    Confirmed break = N closes outside; price tends to surge that way after.
-//    ★ cyan / magenta = prints ON the rail that broke, at the confirmation bar
+//
+//  While the zone is live the rails track the true high and low of the balance
+//  region, so a wick or a single close outside widens the zone instead of
+//  leaving a rail that no longer contains price. The moment a bar closes
+//  outside, the rails lock and the break clock starts.
 //
 //  The panel is drawn BEHIND the chart (behind_chart = true) so it reads as a
 //  solid background block with the candles sitting on top of it, not as a wash
@@ -31,6 +35,8 @@ minTaps  = input.int(5, "Min centre crossings", minval = 1, group = gBal,
 atrLen   = input.int(14, "ATR length", minval = 1, group = gBal)
 minAtr   = input.float(0.10, "Min bar range vs zone height", minval = 0, step = 0.01, group = gBal,
      tooltip = "Average bar range as a fraction of the zone's height. Filters out flat, dead windows that are technically 'in range' but have no movement in them.")
+trackHL  = input.bool(true, "Rails track the zone's true high and low", group = gBal,
+     tooltip = "On: while price stays in balance the rails widen to hold every wick, so they always mark the real edges of the range. Off: the rails stay frozen at the levels they were born with.")
 
 // ── Spacing ──────────────────────────────────────────────────────────────────
 gSpc     = "Spacing"
@@ -39,7 +45,7 @@ cooldown = input.int(20, "Cooldown bars after a zone ends", minval = 0, group = 
 maxOver  = input.float(40, "Max overlap with the last zone %", minval = 0, maxval = 100, step = 5, group = gSpc,
      tooltip = "A new zone has to cover genuinely different prices than the one before it. Lower = stricter.")
 keepOld  = input.int(25, "Historical zones kept", minval = 0, maxval = 150, group = gSpc,
-     tooltip = "Older zones are deleted past this count. Break stars stay on the chart either way.")
+     tooltip = "Older zones are deleted past this count.")
 
 // ── Break confirmation ───────────────────────────────────────────────────────
 gBrk     = "Break confirmation"
@@ -61,16 +67,6 @@ recolour = input.bool(false, "Recolour the rails after a confirmed break", group
 upCol    = input.color(#1B7F4B, "Broken up",   group = gSty, inline = "c3")
 dnCol    = input.color(#8E2A3B, "Broken down", group = gSty, inline = "c3")
 
-// ── Break markers ────────────────────────────────────────────────────────────
-gMark    = "Break markers"
-showBrk  = input.bool(true, "Mark confirmed breaks", group = gMark)
-useTri   = input.bool(false, "Use triangles instead of stars", group = gMark)
-starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gMark)
-starOff  = input.float(0.25, "Star offset from the rail (ATR)", minval = 0, step = 0.05, group = gMark,
-     tooltip = "Stars sit on the rail that broke. This nudges them clear of the line — 0 puts them exactly on it.")
-bullCol  = input.color(#00E5FF, "Break up ★",   group = gMark, inline = "sc")
-bearCol  = input.color(#FF00E0, "Break down ★", group = gMark, inline = "sc")
-
 // ═════════════════════════════════════════════════════════════════════════════
 //  WINDOW STATS
 // ═════════════════════════════════════════════════════════════════════════════
@@ -79,8 +75,8 @@ winHi     = ta.highest(high, winLen)
 winLo     = ta.lowest(low,   winLen)
 winMid    = math.avg(winHi, winLo)
 rangePct  = winMid != 0 ? (winHi - winLo) / winMid * 100 : 0.0
-bandH     = winHi - winLo
-atrOk     = bandH > 0 and atr / bandH >= minAtr
+winH      = winHi - winLo
+atrOk     = winH > 0 and atr / winH >= minAtr
 
 // how many times price crossed the window midpoint inside the window
 crossUp   = close > winMid and close[1] <= winMid
@@ -122,6 +118,7 @@ f_trim() =>
     while array.size(oldPanels) > keepOld
         box.delete(array.shift(oldPanels))
 
+//  break test runs against the rails as they stand coming into this bar
 buf       = na(bandHi) ? 0.0 : (bandHi - bandLo) * brkBuf / 100.0
 brokeUp   = active and close > bandHi + buf
 brokeDn   = active and close < bandLo - buf
@@ -158,6 +155,20 @@ if active
         prevHi  := bandHi
         prevLo  := bandLo
     else
+        // still in balance: hold every wick, but only while nothing has closed outside
+        if trackHL and outUp == 0 and outDn == 0
+            bandHi := math.max(bandHi, high)
+            bandLo := math.min(bandLo, low)
+            line.set_y1(railTop, bandHi)
+            line.set_y2(railTop, bandHi)
+            line.set_y1(railBot, bandLo)
+            line.set_y2(railBot, bandLo)
+            box.set_top(panel, bandHi)
+            box.set_bottom(panel, bandLo)
+            if not na(railMid)
+                mid = math.avg(bandHi, bandLo)
+                line.set_y1(railMid, mid)
+                line.set_y2(railMid, mid)
         box.set_right(panel, bar_index + 1)
         line.set_x2(railTop, bar_index + 1)
         line.set_x2(railBot, bar_index + 1)
@@ -167,7 +178,7 @@ if active
 // a new zone must clear the cooldown and cover different prices than the last one
 ovLo      = na(prevHi) ? 0.0 : math.max(winLo, prevLo)
 ovHi      = na(prevHi) ? 0.0 : math.min(winHi, prevHi)
-overlap   = na(prevHi) or bandH <= 0 ? 0.0 : math.max(0.0, ovHi - ovLo) / bandH * 100.0
+overlap   = na(prevHi) or winH <= 0 ? 0.0 : math.max(0.0, ovHi - ovLo) / winH * 100.0
 roomForIt = overlap <= maxOver and (bar_index - lastEnd) >= cooldown
 
 if not active and isBalance and roomForIt and not confirmUp and not confirmDn and bar_index > winLen
@@ -185,26 +196,6 @@ if not active and isBalance and roomForIt and not confirmUp and not confirmDn an
     railMid := showMid ? line.new(left, math.avg(bandHi, bandLo), bar_index + 1,
          math.avg(bandHi, bandLo), xloc = xloc.bar_index,
          color = color.new(edgeCol, 35), style = line.style_dotted) : na
-
-// ── Break markers: stars sit on the rail that broke ──────────────────────────
-brkUp    = showBrk and confirmUp and not confirmUp[1]
-brkDn    = showBrk and confirmDn and not confirmDn[1]
-bullY    = bandHi + atr * starOff      // the upper rail price, nudged clear
-bearY    = bandLo - atr * starOff      // the lower rail price, nudged clear
-starOn   = not useTri
-szT      = starSz == "Tiny"
-szS      = starSz == "Small"
-szN      = starSz == "Normal"
-
-plotchar(starOn and szT and brkUp ? bullY : na, "Break ★ up (tiny)",     "★", location.absolute, bullCol, size = size.tiny, display = display.pane)
-plotchar(starOn and szS and brkUp ? bullY : na, "Break ★ up (small)",    "★", location.absolute, bullCol, size = size.small, display = display.pane)
-plotchar(starOn and szN and brkUp ? bullY : na, "Break ★ up (normal)",   "★", location.absolute, bullCol, size = size.normal, display = display.pane)
-plotchar(starOn and szT and brkDn ? bearY : na, "Break ★ down (tiny)",   "★", location.absolute, bearCol, size = size.tiny, display = display.pane)
-plotchar(starOn and szS and brkDn ? bearY : na, "Break ★ down (small)",  "★", location.absolute, bearCol, size = size.small, display = display.pane)
-plotchar(starOn and szN and brkDn ? bearY : na, "Break ★ down (normal)", "★", location.absolute, bearCol, size = size.normal, display = display.pane)
-
-plotshape(useTri and brkUp, "Break ▲", shape.triangleup,   location.belowbar, bullCol, size = size.tiny, display = display.pane)
-plotshape(useTri and brkDn, "Break ▼", shape.triangledown, location.abovebar, bearCol, size = size.tiny, display = display.pane)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(confirmUp and not confirmUp[1], "Uranium break up",   "Uranium Band: confirmed break UP on {{ticker}}")
