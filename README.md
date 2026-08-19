@@ -76,6 +76,20 @@ the **short** confirmation baseline (`confirmation length`), which is what lets 
 print at a high while the candles are still gold. Optional RSI-side and volume-participation
 filters, an optional "trigger must agree with regime" switch, and a cooldown.
 
+### Gold Regime — what feeds it
+MACD drives the momentum flip and ATR sets the offsets and the push threshold. RSI, volume,
+VWAP side, and market internals (Put/Call ratio, VIX, McClellan level and divergence, on a
+2-of-3 vote) are all wired in as filters — each behind its own switch, and each one only
+ever removes triggers, never adds them. Internals and VWAP default off so the read stays
+symbol-specific; RSI and volume default off so the star set matches what the reference
+charts print.
+
+**Sensitivity** (1-10, default 5) scales three gates at once: how far price must push past
+the confirmation baseline, the cooldown between same-side triggers, and how close to a swing
+extreme a trigger must sit. 5 leaves them exactly as configured; lower tightens all three,
+higher loosens them. The individual inputs remain the baseline it scales, so calibrate there
+and steer with the one dial.
+
 ### Carbon Structure
 Two smoothed baselines; the cloud is drawn between them with an ATR floor so it never
 collapses to a line. It widens as the baselines separate (trend strength) and pinches as

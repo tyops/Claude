@@ -21,6 +21,11 @@ confLen  = input.int(10, "Trigger confirmation length", minval = 1, group = gEng
 maType   = input.string("EMA", "Baseline type", options = ["EMA", "SMA", "WMA", "HMA", "ALMA"], group = gEng)
 atrLen   = input.int(14, "ATR length (star offset)", minval = 1, group = gEng)
 
+// ── Sensitivity ──────────────────────────────────────────────────────────────
+gSens    = "Sensitivity"
+sens     = input.int(5, "Signal sensitivity", minval = 1, maxval = 10, group = gSens,
+     tooltip = "One dial over the three gates below: how far price must push past the baseline, how long the cooldown runs, and how close to a swing extreme a trigger has to sit. 5 leaves them exactly as set. Below 5 tightens all three for fewer, cleaner stars; above 5 loosens them for more. The individual inputs stay the baseline this scales.")
+
 // ── Filters ──────────────────────────────────────────────────────────────────
 gFlt     = "Trigger filters"
 useRsi   = input.bool(false, "Require RSI side",             group = gFlt, inline = "r")
@@ -30,6 +35,24 @@ useVol   = input.bool(false, "Require volume participation", group = gFlt, inlin
 volLen   = input.int(20, "len", minval = 1,                  group = gFlt, inline = "v")
 volMult  = input.float(1.0, "×", minval = 0.1, step = 0.1,   group = gFlt, inline = "v")
 needReg  = input.bool(false, "Trigger must agree with regime", group = gFlt)
+useVwap  = input.bool(false, "Require the VWAP side",        group = gFlt, inline = "vw")
+vwapLen  = input.int(50, "len", minval = 1,                  group = gFlt, inline = "vw",
+     tooltip = "Bull triggers only above VWAP, bear triggers only below it. Rolling VWAP over this many bars.")
+
+// ── Market internals ─────────────────────────────────────────────────────────
+gInt     = "Market internals (PCR / VIX / McClellan)"
+useInt   = input.bool(false, "Require internals confirmation", group = gInt,
+     tooltip = "Broad-market confluence from the original spec. Off by default because it is market-wide and pulls every symbol toward the same read — turn it on to demand that the tape agrees before a star prints.")
+intVotes = input.int(2, "Votes required (of 3)", minval = 1, maxval = 3, group = gInt)
+intTf    = input.timeframe("", "Internals timeframe (blank = chart)", group = gInt)
+pcrSym   = input.symbol("USI:PCC",     "Put/Call ratio",   group = gInt)
+vixSym   = input.symbol("CBOE:VIX",    "Volatility index", group = gInt)
+advSym   = input.symbol("USI:ADVN.NY", "Advancing issues", group = gInt)
+decSym   = input.symbol("USI:DECL.NY", "Declining issues", group = gInt)
+intSm    = input.int(20, "Internals smoothing", minval = 1, group = gInt)
+mcFastL  = input.int(19, "McClellan fast EMA", minval = 1, group = gInt, inline = "mc")
+mcSlowL  = input.int(39, "slow EMA",           minval = 1, group = gInt, inline = "mc")
+divLook  = input.int(20, "McClellan divergence lookback", minval = 5, group = gInt)
 useSwing = input.bool(true, "Only fire at swing turns", group = gFlt,
      tooltip = "A bear trigger has to come just after a swing high, a bull trigger just after a swing low. This is what keeps stars on the turns that matter instead of on every momentum flip. The single biggest control over how many you get.")
 swingLen = input.int(20, "Swing lookback", minval = 2, group = gFlt, inline = "sw")
@@ -63,6 +86,9 @@ f_ma(_src, _len, _type) =>
         "ALMA" => ta.alma(_src, _len, 0.85, 6)
         => ta.ema(_src, _len)
 
+f_req(_sym, _tf) =>
+    request.security(_sym, _tf == "" ? timeframe.period : _tf, close, ignore_invalid_symbol = true)
+
 // ═════════════════════════════════════════════════════════════════════════════
 //  REGIME
 // ═════════════════════════════════════════════════════════════════════════════
@@ -95,19 +121,57 @@ rsiBullOk = not useRsi or rsi > rsiMid
 rsiBearOk = not useRsi or rsi < rsiMid
 
 // momentum flip + price confirms against the short baseline
+// ── VWAP side ────────────────────────────────────────────────────────────────
+vol_      = nz(volume)
+volSum    = math.sum(vol_, vwapLen)
+vwap      = volSum > 0 ? math.sum(hlc3 * vol_, vwapLen) / volSum : ta.ema(hlc3, vwapLen)
+vwapBull  = not useVwap or close > vwap
+vwapBear  = not useVwap or close < vwap
+
+// ── Market internals: PCR, VIX, McClellan level and divergence ───────────────
+pcr       = f_req(pcrSym, intTf)
+vix       = f_req(vixSym, intTf)
+advn      = f_req(advSym, intTf)
+decl      = f_req(decSym, intTf)
+netAdv    = nz(advn) - nz(decl)
+mcOsc     = ta.ema(netAdv, mcFastL) - ta.ema(netAdv, mcSlowL)
+pcrAvg    = ta.ema(nz(pcr, 1.0),  intSm)
+vixAvg    = ta.ema(nz(vix, 20.0), intSm)
+pcrBull   = na(pcr) ? false : pcr < pcrAvg          // put/call easing = calls in control
+vixBull   = na(vix) ? false : vix < vixAvg          // volatility easing = risk-on
+priceHH   = close > ta.highest(close, divLook)[1]
+priceLL   = close < ta.lowest(close,  divLook)[1]
+mcLowerHi = mcOsc < ta.highest(mcOsc, divLook)[1]
+mcHigherLo= mcOsc > ta.lowest(mcOsc,  divLook)[1]
+mcBearDiv = priceHH and mcLowerHi                   // price up, breadth not following
+mcBullDiv = priceLL and mcHigherLo                  // price down, breadth improving
+mcBull    = mcOsc > 0 or mcBullDiv
+haveInt   = not na(pcr) or not na(vix) or netAdv != 0
+bullVotes = (pcrBull ? 1 : 0) + (vixBull ? 1 : 0) + (mcBull ? 1 : 0)
+bearVotes = (not pcrBull and not na(pcr) ? 1 : 0) + (not vixBull and not na(vix) ? 1 : 0) +
+            (not mcBull or mcBearDiv ? 1 : 0)
+intBull   = not useInt or not haveInt or bullVotes >= intVotes
+intBear   = not useInt or not haveInt or bearVotes >= intVotes
+
+//  sensitivity scales the three gates together; 5 leaves them as set
+k         = 5.0 / sens
+effPush   = minPush  * k
+effCool   = cooldown * k
+effAge    = swingAge / k
+
 //  how many bars back the swing extreme of the window sits
 hiAge     = math.abs(ta.highestbars(high, swingLen))
 loAge     = math.abs(ta.lowestbars(low,  swingLen))
-atHigh    = not useSwing or hiAge <= swingAge
-atLow     = not useSwing or loAge <= swingAge
-push      = atr * minPush
-bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa + push and atLow  and rsiBullOk and volOk and (not needReg or gold)
-bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa - push and atHigh and rsiBearOk and volOk and (not needReg or not gold)
+atHigh    = not useSwing or hiAge <= effAge
+atLow     = not useSwing or loAge <= effAge
+push      = atr * effPush
+bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa + push and atLow  and rsiBullOk and volOk and vwapBull and intBull and (not needReg or gold)
+bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa - push and atHigh and rsiBearOk and volOk and vwapBear and intBear and (not needReg or not gold)
 
 var int lastBull = -99999
 var int lastBear = -99999
-bullTrig  = bullRaw and (bar_index - lastBull) >= cooldown
-bearTrig  = bearRaw and (bar_index - lastBear) >= cooldown
+bullTrig  = bullRaw and (bar_index - lastBull) >= effCool
+bearTrig  = bearRaw and (bar_index - lastBear) >= effCool
 if bullTrig
     lastBull := bar_index
 if bearTrig
