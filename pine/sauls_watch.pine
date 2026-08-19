@@ -36,8 +36,11 @@ neutCol  = input.color(#33383F, "NEUTRAL", group = gSty, inline = "c")
 hdrBg    = input.color(#1B1F26, "Header",  group = gSty, inline = "h")
 hdrTxt   = input.color(#9AA0A6, "Header text", group = gSty, inline = "h")
 bearTxt  = input.color(#C4C9D0, "BEAR text", group = gSty)
+showDur  = input.bool(true, "Show how long each state has held", group = gSty,
+     tooltip = "Bars of that timeframe since it last flipped — a weekly BULL at 14 has held for fourteen weeks. Duration is the context that tells a fresh flip from a mature one.")
 
 // ═════════════════════════════════════════════════════════════════════════════
+//  state and how many bars of that timeframe it has held for
 f_regime() =>
     [m, s, h] = ta.macd(close, fastLen, slowLen, sigLen)
     trendMa   = ta.ema(close, trendLen)
@@ -45,13 +48,16 @@ f_regime() =>
     trendBull = close > trendMa
     var bool g = false
     g := momBull and trendBull ? true : not momBull and not trendBull ? false : g
-    momBull == trendBull ? (g ? 1 : -1) : 0
+    state = momBull == trendBull ? (g ? 1 : -1) : 0
+    var int held = 0
+    held := state == state[1] ? held + 1 : 1
+    [state, held]
 
-st1 = request.security(syminfo.tickerid, tf1, f_regime(), lookahead = barmerge.lookahead_off)
-st2 = request.security(syminfo.tickerid, tf2, f_regime(), lookahead = barmerge.lookahead_off)
-st3 = request.security(syminfo.tickerid, tf3, f_regime(), lookahead = barmerge.lookahead_off)
-st4 = request.security(syminfo.tickerid, tf4, f_regime(), lookahead = barmerge.lookahead_off)
-st5 = request.security(syminfo.tickerid, tf5, f_regime(), lookahead = barmerge.lookahead_off)
+[st1, dur1] = request.security(syminfo.tickerid, tf1, f_regime(), lookahead = barmerge.lookahead_off)
+[st2, dur2] = request.security(syminfo.tickerid, tf2, f_regime(), lookahead = barmerge.lookahead_off)
+[st3, dur3] = request.security(syminfo.tickerid, tf3, f_regime(), lookahead = barmerge.lookahead_off)
+[st4, dur4] = request.security(syminfo.tickerid, tf4, f_regime(), lookahead = barmerge.lookahead_off)
+[st5, dur5] = request.security(syminfo.tickerid, tf5, f_regime(), lookahead = barmerge.lookahead_off)
 
 //  "60" -> 1H, "240" -> 4H, "D" -> 1D, and so on
 f_tfLabel(_tf) =>
@@ -74,22 +80,25 @@ f_bg(_s) =>
 f_fg(_s) =>
     _s == 1 ? color.new(#101216, 0) : bearTxt
 
-var table tbl = table.new(tblPos, 5, 2,
+var table tbl = table.new(tblPos, 5, 3,
      border_color = color.new(#0B0D11, 0), border_width = 1,
      frame_color = color.new(#0B0D11, 0), frame_width = 1)
 
-f_col(_c, _tf, _state) =>
+f_col(_c, _tf, _state, _dur) =>
     table.cell(tbl, _c, 0, f_tfLabel(_tf), text_color = hdrTxt, text_size = txtSize,
          bgcolor = hdrBg)
     table.cell(tbl, _c, 1, f_label(_state), text_color = f_fg(_state), text_size = txtSize,
          bgcolor = f_bg(_state))
+    if showDur
+        table.cell(tbl, _c, 2, str.tostring(int(nz(_dur))), text_color = hdrTxt,
+             text_size = txtSize, bgcolor = hdrBg)
 
 if barstate.islast
-    f_col(0, tf1, st1)
-    f_col(1, tf2, st2)
-    f_col(2, tf3, st3)
-    f_col(3, tf4, st4)
-    f_col(4, tf5, st5)
+    f_col(0, tf1, st1, dur1)
+    f_col(1, tf2, st2, dur2)
+    f_col(2, tf3, st3, dur3)
+    f_col(3, tf4, st4, dur4)
+    f_col(4, tf5, st5, dur5)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(st4 == 1 and st4[1] != 1,   "TF4 → BULL", "Saul's Watch: TF4 flipped BULL on {{ticker}}")

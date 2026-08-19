@@ -21,6 +21,14 @@ confLen  = input.int(10, "Trigger confirmation length", minval = 1, group = gEng
 maType   = input.string("EMA", "Baseline type", options = ["EMA", "SMA", "WMA", "HMA", "ALMA"], group = gEng)
 atrLen   = input.int(14, "ATR length (star offset)", minval = 1, group = gEng)
 
+// ── Higher-timeframe sync ────────────────────────────────────────────────────
+gHtf     = "Higher-timeframe sync"
+useHtf   = input.bool(false, "Trigger must agree with a higher timeframe", group = gHtf,
+     tooltip = "Short-term pressure has to line up with the trend one step up before a bias flip counts: bull triggers only while the higher timeframe is above its trend baseline, bear triggers only while it is below.")
+htfAuto  = input.bool(true, "Pick the timeframe automatically", group = gHtf,
+     tooltip = "Intraday steps up to daily, daily to weekly, weekly to monthly, monthly to yearly.")
+htfCust  = input.timeframe("W", "Custom timeframe", group = gHtf)
+
 // ── Sensitivity ──────────────────────────────────────────────────────────────
 gSens    = "Sensitivity"
 sens     = input.int(5, "Signal sensitivity", minval = 1, maxval = 10, group = gSens,
@@ -153,6 +161,15 @@ bearVotes = (not pcrBull and not na(pcr) ? 1 : 0) + (not vixBull and not na(vix)
 intBull   = not useInt or not haveInt or bullVotes >= intVotes
 intBear   = not useInt or not haveInt or bearVotes >= intVotes
 
+// ── Higher-timeframe trend ───────────────────────────────────────────────────
+//  one step up from the chart, unless a timeframe is named
+htfStep   = timeframe.isintraday ? "D" : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "12M"
+htfTf     = htfAuto ? htfStep : htfCust
+htfUp     = request.security(syminfo.tickerid, htfTf, close > ta.ema(close, trendLen),
+     lookahead = barmerge.lookahead_off)
+htfBull   = not useHtf or htfUp
+htfBear   = not useHtf or not htfUp
+
 //  sensitivity scales the three gates together; 5 leaves them as set
 k         = 5.0 / sens
 effPush   = minPush  * k
@@ -165,8 +182,8 @@ loAge     = math.abs(ta.lowestbars(low,  swingLen))
 atHigh    = not useSwing or hiAge <= effAge
 atLow     = not useSwing or loAge <= effAge
 push      = atr * effPush
-bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa + push and atLow  and rsiBullOk and volOk and vwapBull and intBull and (not needReg or gold)
-bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa - push and atHigh and rsiBearOk and volOk and vwapBear and intBear and (not needReg or not gold)
+bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa + push and atLow  and rsiBullOk and volOk and vwapBull and intBull and htfBull and (not needReg or gold)
+bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa - push and atHigh and rsiBearOk and volOk and vwapBear and intBear and htfBear and (not needReg or not gold)
 
 var int lastBull = -99999
 var int lastBear = -99999
