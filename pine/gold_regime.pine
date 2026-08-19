@@ -30,6 +30,11 @@ useVol   = input.bool(false, "Require volume participation", group = gFlt, inlin
 volLen   = input.int(20, "len", minval = 1,                  group = gFlt, inline = "v")
 volMult  = input.float(1.0, "×", minval = 0.1, step = 0.1,   group = gFlt, inline = "v")
 needReg  = input.bool(false, "Trigger must agree with regime", group = gFlt)
+useSwing = input.bool(true, "Only fire at swing turns", group = gFlt,
+     tooltip = "A bear trigger has to come just after a swing high, a bull trigger just after a swing low. This is what keeps stars on the turns that matter instead of on every momentum flip. The single biggest control over how many you get.")
+swingLen = input.int(20, "Swing lookback", minval = 2, group = gFlt, inline = "sw")
+swingAge = input.int(5,  "bars since the extreme", minval = 0, group = gFlt, inline = "sw",
+     tooltip = "How recent the swing high or low has to be. Larger accepts later flips and prints more stars.")
 cooldown = input.int(8, "Cooldown bars between same-side triggers", minval = 0, group = gFlt,
      tooltip = "Kills the clusters where the same signal repeats within a couple of bars. Lower it for more triggers, raise it for fewer.")
 minPush  = input.float(0.25, "Min push past the baseline (ATR)", minval = 0, step = 0.05, group = gFlt,
@@ -90,9 +95,14 @@ rsiBullOk = not useRsi or rsi > rsiMid
 rsiBearOk = not useRsi or rsi < rsiMid
 
 // momentum flip + price confirms against the short baseline
+//  how many bars back the swing extreme of the window sits
+hiAge     = math.abs(ta.highestbars(high, swingLen))
+loAge     = math.abs(ta.lowestbars(low,  swingLen))
+atHigh    = not useSwing or hiAge <= swingAge
+atLow     = not useSwing or loAge <= swingAge
 push      = atr * minPush
-bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa + push and rsiBullOk and volOk and (not needReg or gold)
-bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa - push and rsiBearOk and volOk and (not needReg or not gold)
+bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa + push and atLow  and rsiBullOk and volOk and (not needReg or gold)
+bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa - push and atHigh and rsiBearOk and volOk and (not needReg or not gold)
 
 var int lastBull = -99999
 var int lastBear = -99999
