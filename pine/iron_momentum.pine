@@ -1,0 +1,86 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — IRON MOMENTUM
+//  A fast momentum line measured against its smoother baseline, drawn as a band
+//  that expands when momentum moves aggressively and contracts when things go
+//  quiet. Gold shading = buyers control momentum. Gray = sellers do.
+//    ★ cyan    = momentum flips into bullish control
+//    ★ magenta = momentum flips into bearish control
+//  Best flips: band tight, then expanding. Worst: band already wide and fading.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Iron Momentum", "Iron Momentum", overlay = false)
+
+// ── Momentum ─────────────────────────────────────────────────────────────────
+gMom     = "Momentum"
+src      = input.source(close, "Source",                  group = gMom)
+fastLen  = input.int(12, "MACD fast",  minval = 1,        group = gMom, inline = "m")
+slowLen  = input.int(26, "slow",       minval = 1,        group = gMom, inline = "m")
+sigLen   = input.int(9,  "signal",     minval = 1,        group = gMom, inline = "m")
+smooth   = input.int(2,  "Line smoothing", minval = 1,    group = gMom)
+bandMlt  = input.float(1.0, "Band width ×", minval = 0.1, step = 0.1, group = gMom)
+bandMin  = input.float(0.05, "Min half-width (% of ATR)", minval = 0, step = 0.05, group = gMom,
+     tooltip = "Floor for the band so it stays visible through dead patches. Scaled off ATR so it travels across symbols.")
+atrLen   = input.int(14, "ATR length", minval = 1,        group = gMom)
+pinchPct = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gMom)
+sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gMom)
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+goldCol  = input.color(#C9A227, "Buyers in control",  group = gSty, inline = "c")
+ironCol  = input.color(#7C8794, "Sellers in control", group = gSty, inline = "c")
+bandT    = input.int(45, "Band transparency", minval = 0, maxval = 100, group = gSty)
+showBase = input.bool(true, "Show baseline", group = gSty)
+
+// ── Stars ────────────────────────────────────────────────────────────────────
+gStar    = "Stars"
+showStar = input.bool(true, "Show stars", group = gStar)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starGap  = input.float(0.6, "Star gap below the band (× half-width)", minval = 0, step = 0.1, group = gStar)
+bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
+bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
+
+// ═════════════════════════════════════════════════════════════════════════════
+[macdLine, macdSig, macdHist] = ta.macd(src, fastLen, slowLen, sigLen)
+atr      = ta.atr(atrLen)
+fastMom  = ta.ema(macdLine, smooth)
+baseMom  = ta.ema(macdSig,  smooth)
+
+bullMom  = fastMom > baseMom
+spread   = math.abs(fastMom - baseMom)
+half     = math.max(spread * bandMlt, atr * bandMin)
+upper    = baseMom + half
+lower    = baseMom - half
+
+hiW      = ta.highest(half, sqzLook)
+loW      = ta.lowest(half,  sqzLook)
+widthRnk = hiW - loW > 0 ? (half - loW) / (hiW - loW) * 100 : 50.0
+pinched  = widthRnk < pinchPct
+
+bandCol  = bullMom ? goldCol : ironCol
+
+pUp = plot(upper, "Band upper", color = color.new(bandCol, math.min(99, bandT + 30)), linewidth = 1)
+pDn = plot(lower, "Band lower", color = color.new(bandCol, math.min(99, bandT + 30)), linewidth = 1)
+fill(pUp, pDn, color = color.new(bandCol, pinched ? math.min(99, bandT + 15) : bandT), title = "Iron band")
+plot(showBase ? baseMom : na, "Baseline", color = color.new(#C4C9D0, 25), linewidth = 1)
+plot(0, "Zero", color = color.new(color.gray, 55))
+
+// ── Stars: the bar control flips ─────────────────────────────────────────────
+bullStar = bullMom and not bullMom[1]
+bearStar = not bullMom and bullMom[1]
+starY    = lower - half * starGap
+szT      = starSz == "Tiny"
+szS      = starSz == "Small"
+szN      = starSz == "Normal"
+
+plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny)
+plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small)
+plotchar(showStar and szN and bullStar ? starY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal)
+plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny)
+plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small)
+plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(bullStar, "Iron — bullish control", "Iron Momentum: buyers took control on {{ticker}}")
+alertcondition(bearStar, "Iron — bearish control", "Iron Momentum: sellers took control on {{ticker}}")
+alertcondition(pinched and not pinched[1], "Iron — compression", "Iron Momentum: band compressing on {{ticker}}")
+alertcondition(not pinched and pinched[1], "Iron — expansion",   "Iron Momentum: band expanding on {{ticker}}")

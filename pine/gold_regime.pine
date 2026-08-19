@@ -1,0 +1,122 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — GOLD REGIME
+//  Regime filter + trigger system. Momentum shift blended with trend confirmation
+//  defines the bullish / bearish state; candles are recoloured to match.
+//  Triggers only fire when short-term pressure and broader direction agree.
+//    ★ cyan    = bull trigger
+//    ★ magenta = bear trigger
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Gold Regime", "Gold Regime", overlay = true)
+
+// ── Engine ───────────────────────────────────────────────────────────────────
+gEng     = "Engine"
+src      = input.source(close, "Source",                      group = gEng)
+fastLen  = input.int(12, "MACD fast",   minval = 1,           group = gEng, inline = "m")
+slowLen  = input.int(26, "slow",        minval = 1,           group = gEng, inline = "m")
+sigLen   = input.int(9,  "signal",      minval = 1,           group = gEng, inline = "m")
+trendLen = input.int(50, "Regime trend length", minval = 1,   group = gEng)
+confLen  = input.int(10, "Trigger confirmation length", minval = 1, group = gEng,
+     tooltip = "Short baseline price must close beyond for a trigger to count. This is what lets a bear star print at a high, while the slower trend length still drives candle colour.")
+maType   = input.string("EMA", "Baseline type", options = ["EMA", "SMA", "WMA", "HMA", "ALMA"], group = gEng)
+atrLen   = input.int(14, "ATR length (star offset)", minval = 1, group = gEng)
+
+// ── Filters ──────────────────────────────────────────────────────────────────
+gFlt     = "Trigger filters"
+useRsi   = input.bool(false, "Require RSI side",             group = gFlt, inline = "r")
+rsiLen   = input.int(14, "len", minval = 1,                  group = gFlt, inline = "r")
+rsiMid   = input.int(50, "mid", minval = 1, maxval = 99,     group = gFlt, inline = "r")
+useVol   = input.bool(false, "Require volume participation", group = gFlt, inline = "v")
+volLen   = input.int(20, "len", minval = 1,                  group = gFlt, inline = "v")
+volMult  = input.float(1.0, "×", minval = 0.1, step = 0.1,   group = gFlt, inline = "v")
+needReg  = input.bool(false, "Trigger must agree with regime", group = gFlt)
+cooldown = input.int(3, "Cooldown bars between same-side triggers", minval = 0, group = gFlt)
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+paintBar = input.bool(true,  "Recolour candles",             group = gSty)
+solidBod = input.bool(false, "Solid bodies",                 group = gSty)
+goldCol  = input.color(#C9A227, "Gold regime", group = gSty, inline = "rc")
+grayCol  = input.color(#9AA0A6, "Gray regime", group = gSty, inline = "rc")
+showStar = input.bool(true, "Show stars",                    group = gSty)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gSty)
+starOff  = input.float(0.8, "Star offset (ATR)", minval = 0, step = 0.1, group = gSty)
+bullCol  = input.color(#00E5FF, "Bull ★", group = gSty, inline = "sc")
+bearCol  = input.color(#FF00E0, "Bear ★", group = gSty, inline = "sc")
+showTri  = input.bool(false, "Triangle markers instead of stars", group = gSty)
+
+// ── Helper ───────────────────────────────────────────────────────────────────
+f_ma(_src, _len, _type) =>
+    switch _type
+        "SMA"  => ta.sma(_src, _len)
+        "WMA"  => ta.wma(_src, _len)
+        "HMA"  => ta.hma(_src, _len)
+        "ALMA" => ta.alma(_src, _len, 0.85, 6)
+        => ta.ema(_src, _len)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  REGIME
+// ═════════════════════════════════════════════════════════════════════════════
+[macdLine, sigLine, macdHist] = ta.macd(src, fastLen, slowLen, sigLen)
+trendMa   = f_ma(src, trendLen, maType)
+confMa    = f_ma(src, confLen,  maType)
+atr       = ta.atr(atrLen)
+
+momBull   = macdLine > sigLine
+momBear   = macdLine < sigLine
+trendBull = close > trendMa
+trendBear = close < trendMa
+
+// regime latches: it only flips when momentum and direction agree, otherwise it holds
+var bool gold = false
+gold := momBull and trendBull ? true : momBear and trendBear ? false : gold
+regCol    = gold ? goldCol : grayCol
+
+barcolor(paintBar ? regCol : na, title = "Regime candles")
+plotcandle(solidBod ? open : na, solidBod ? high : na, solidBod ? low : na, solidBod ? close : na,
+     "Solid bodies", color = regCol, wickcolor = regCol, bordercolor = regCol)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  TRIGGERS
+// ═════════════════════════════════════════════════════════════════════════════
+rsi       = ta.rsi(src, rsiLen)
+volAvg    = ta.sma(nz(volume), volLen)
+volOk     = not useVol or nz(volume) > volAvg * volMult
+rsiBullOk = not useRsi or rsi > rsiMid
+rsiBearOk = not useRsi or rsi < rsiMid
+
+// momentum flip + price confirms against the short baseline
+bullRaw   = ta.crossover(macdLine, sigLine)  and close > confMa and rsiBullOk and volOk and (not needReg or gold)
+bearRaw   = ta.crossunder(macdLine, sigLine) and close < confMa and rsiBearOk and volOk and (not needReg or not gold)
+
+var int lastBull = -99999
+var int lastBear = -99999
+bullTrig  = bullRaw and (bar_index - lastBull) >= cooldown
+bearTrig  = bearRaw and (bar_index - lastBear) >= cooldown
+if bullTrig
+    lastBull := bar_index
+if bearTrig
+    lastBear := bar_index
+
+bullY     = low  - atr * starOff
+bearY     = high + atr * starOff
+szT       = starSz == "Tiny"
+szS       = starSz == "Small"
+szN       = starSz == "Normal"
+starOn    = showStar and not showTri
+
+plotchar(starOn and szT and bullTrig ? bullY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny)
+plotchar(starOn and szS and bullTrig ? bullY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small)
+plotchar(starOn and szN and bullTrig ? bullY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal)
+plotchar(starOn and szT and bearTrig ? bearY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny)
+plotchar(starOn and szS and bearTrig ? bearY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small)
+plotchar(starOn and szN and bearTrig ? bearY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal)
+
+plotshape(showStar and showTri and bullTrig, "Bull ▲", shape.triangleup,   location.belowbar, bullCol, size = size.tiny)
+plotshape(showStar and showTri and bearTrig, "Bear ▼", shape.triangledown, location.abovebar, bearCol, size = size.tiny)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(bullTrig, "Gold Regime — bull trigger", "Gold Regime: BULL trigger on {{ticker}} @ {{close}}")
+alertcondition(bearTrig, "Gold Regime — bear trigger", "Gold Regime: BEAR trigger on {{ticker}} @ {{close}}")
+alertcondition(gold and not gold[1],  "Regime → GOLD", "Gold Regime: regime flipped GOLD on {{ticker}}")
+alertcondition(not gold and gold[1],  "Regime → GRAY", "Gold Regime: regime flipped GRAY on {{ticker}}")

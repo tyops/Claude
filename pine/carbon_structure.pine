@@ -1,0 +1,97 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — CARBON STRUCTURE
+//  A dynamic band drawn around price for direction, pressure, and expansion vs
+//  compression. The band widens as trend strength increases, pinches as momentum
+//  fades, and flips tone when structure turns hostile to continuation.
+//    Gold band  = structure supports continuation higher
+//    Slate band = structure supports continuation lower
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Carbon Structure", "Carbon Structure", overlay = true)
+
+// ── Structure ────────────────────────────────────────────────────────────────
+gStr     = "Structure"
+src      = input.source(hlc3, "Source",                        group = gStr)
+fastLen  = input.int(13, "Fast length", minval = 1,            group = gStr, inline = "l")
+slowLen  = input.int(34, "Slow length", minval = 1,            group = gStr, inline = "l")
+maType   = input.string("EMA", "Baseline", options = ["EMA", "SMA", "WMA", "HMA", "ALMA"], group = gStr)
+dblSm    = input.bool(true, "Double smooth (rounder band)",    group = gStr)
+widthMlt = input.float(1.0, "Band width ×", minval = 0.1, step = 0.1, group = gStr)
+atrLen   = input.int(14, "ATR length",  minval = 1,            group = gStr, inline = "a")
+atrFloor = input.float(0.25, "min half-width (ATR)", minval = 0, step = 0.05, group = gStr, inline = "a",
+     tooltip = "Keeps the band visible when the two baselines converge, instead of collapsing to a line.")
+
+// ── Compression ──────────────────────────────────────────────────────────────
+gCmp     = "Compression"
+sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gCmp)
+sqzPct   = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gCmp)
+dimSqz   = input.bool(true, "Fade the band while compressed", group = gCmp)
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+goldCol  = input.color(#C9A227, "Gold (bullish structure)", group = gSty, inline = "c")
+slateCol = input.color(#7C8794, "Slate (bearish structure)", group = gSty, inline = "c")
+fillT    = input.int(72, "Cloud transparency", minval = 0, maxval = 100, group = gSty)
+edgeT    = input.int(35, "Edge transparency",  minval = 0, maxval = 100, group = gSty)
+showMid  = input.bool(true, "Show centre line", group = gSty)
+
+// ── Helper ───────────────────────────────────────────────────────────────────
+f_ma(_src, _len, _type) =>
+    switch _type
+        "SMA"  => ta.sma(_src, _len)
+        "WMA"  => ta.wma(_src, _len)
+        "HMA"  => ta.hma(_src, _len)
+        "ALMA" => ta.alma(_src, _len, 0.85, 6)
+        => ta.ema(_src, _len)
+
+f_norm(_src, _len) =>
+    hi  = ta.highest(_src, _len)
+    lo  = ta.lowest(_src, _len)
+    rng = hi - lo
+    na(rng) or rng <= 0 ? 50.0 : (_src - lo) / rng * 100.0
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  BAND
+// ═════════════════════════════════════════════════════════════════════════════
+fast1    = f_ma(src, fastLen, maType)
+slow1    = f_ma(src, slowLen, maType)
+fast     = dblSm ? f_ma(fast1, math.max(1, int(fastLen / 2)), maType) : fast1
+slow     = dblSm ? f_ma(slow1, math.max(1, int(slowLen / 2)), maType) : slow1
+
+atr      = ta.atr(atrLen)
+basis    = math.avg(fast, slow)
+sep      = math.abs(fast - slow) * 0.5 * widthMlt
+half     = math.max(sep, atr * atrFloor)
+upper    = basis + half
+lower    = basis - half
+
+bullStr  = fast > slow
+slopeUp  = basis > basis[1]
+width    = basis != 0 ? (upper - lower) / basis * 100 : 0.0
+widthRnk = f_norm(width, sqzLook)
+squeezed = widthRnk < sqzPct
+
+baseCol  = bullStr ? goldCol : slateCol
+cloudT   = dimSqz and squeezed ? math.min(99, fillT + 12) : fillT
+edgeCol  = color.new(baseCol, dimSqz and squeezed ? math.min(99, edgeT + 20) : edgeT)
+
+pUp = plot(upper, "Upper edge", color = edgeCol, linewidth = 1)
+pDn = plot(lower, "Lower edge", color = edgeCol, linewidth = 1)
+fill(pUp, pDn, color = color.new(baseCol, cloudT), title = "Carbon cloud")
+plot(showMid ? basis : na, "Centre", color = color.new(baseCol, 55), linewidth = 1)
+
+// price position inside the structure
+inBand    = close <= upper and close >= lower
+aboveBand = close > upper
+belowBand = close < lower
+enterBand = inBand and not inBand[1]
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(bullStr and not bullStr[1],   "Structure → gold",  "Carbon Structure: band flipped gold on {{ticker}}")
+alertcondition(not bullStr and bullStr[1],   "Structure → slate", "Carbon Structure: band flipped slate on {{ticker}}")
+alertcondition(squeezed and not squeezed[1], "Structure compressing", "Carbon Structure: band compressing on {{ticker}}")
+alertcondition(not squeezed and squeezed[1], "Structure expanding",   "Carbon Structure: band expanding on {{ticker}}")
+alertcondition(aboveBand and not aboveBand[1], "Close above band", "Carbon Structure: close above the band on {{ticker}}")
+alertcondition(belowBand and not belowBand[1], "Close below band", "Carbon Structure: close below the band on {{ticker}}")
+alertcondition(bullStr and enterBand,     "Pullback into gold band", "Carbon Structure: pullback into the gold band on {{ticker}}")
+alertcondition(not bullStr and enterBand, "Rally into slate band",   "Carbon Structure: rally into the slate band on {{ticker}}")

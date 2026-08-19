@@ -1,0 +1,38 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — VOL
+//  The volume pane in the suite palette: gold on up bars, gray on down bars, with
+//  an optional switch to colour by the Gold Regime state instead, and a shaded
+//  average so participation spikes read at a glance.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Vol", "Vol", overlay = false, format = format.volume)
+
+colorBy  = input.string("Bar direction", "Colour by", options = ["Bar direction", "Gold Regime"])
+avgLen   = input.int(20, "Volume average length", minval = 1)
+spikeMlt = input.float(2.0, "Spike multiple", minval = 1.0, step = 0.1)
+fastLen  = input.int(12, "MACD fast", minval = 1, inline = "m")
+slowLen  = input.int(26, "slow",      minval = 1, inline = "m")
+sigLen   = input.int(9,  "signal",    minval = 1, inline = "m")
+trendLen = input.int(50, "Regime trend length", minval = 1)
+goldCol  = input.color(#C9A227, "Up / gold",   inline = "c")
+grayCol  = input.color(#9AA0A6, "Down / gray", inline = "c")
+spikeCol = input.color(#FFFFFF, "Spike",       inline = "c")
+showAvg  = input.bool(true, "Show average")
+
+vol       = nz(volume)
+volAvg    = ta.sma(vol, avgLen)
+spike     = vol > volAvg * spikeMlt
+
+[m, s, h] = ta.macd(close, fastLen, slowLen, sigLen)
+trendMa   = ta.ema(close, trendLen)
+var bool gold = false
+gold := m > s and close > trendMa ? true : m < s and close < trendMa ? false : gold
+
+upBar     = close >= open
+bullish   = colorBy == "Bar direction" ? upBar : gold
+barCol    = color.new(bullish ? goldCol : grayCol, 15)
+
+plot(vol, "Volume", color = spike ? color.new(spikeCol, 25) : barCol, style = plot.style_columns)
+plot(showAvg ? volAvg : na, "Average", color = color.new(#C4C9D0, 35))
+
+alertcondition(spike, "Volume spike", "Vol: volume spike on {{ticker}}")

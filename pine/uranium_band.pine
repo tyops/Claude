@@ -1,0 +1,127 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — URANIUM BAND
+//  Hunts for balance zones: price chopping around a centre point with enough
+//  movement to matter. When the conditions line up it prints a horizontal band
+//  from the window's high and low (plus an optional centre line), extends it
+//  forward while price stays in balance, and stops only after a confirmed break.
+//    Inside the band  = chop. Fade the edges, smaller size, quicker profits.
+//    Confirmed break  = N closes outside; price tends to surge that way after.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Uranium Band", "Uranium Band", overlay = true,
+     max_boxes_count = 200, max_lines_count = 200)
+
+// ── Balance detection ────────────────────────────────────────────────────────
+gBal     = "Balance detection"
+winLen   = input.int(20, "Balance window (bars)", minval = 3, group = gBal)
+minRange = input.float(3.0,  "Min window range %", minval = 0.1, step = 0.1, group = gBal,
+     tooltip = "Movement floor — the window has to actually travel to count as balance rather than a dead tape.")
+maxRange = input.float(25.0, "Max window range %", minval = 0.5, step = 0.5, group = gBal,
+     tooltip = "Movement ceiling — above this the window is a trend leg, not balance.")
+minTaps  = input.int(4, "Min centre crossings", minval = 1, group = gBal,
+     tooltip = "How many times price has to cross the window's midpoint before it counts as chopping around a centre.")
+atrLen   = input.int(14, "ATR length", minval = 1, group = gBal)
+minAtr   = input.float(0.10, "Min bar range vs band height", minval = 0, step = 0.01, group = gBal,
+     tooltip = "Average bar range as a fraction of the window's height. Filters out flat, dead windows that are technically 'in range' but have no movement in them.")
+
+// ── Break confirmation ───────────────────────────────────────────────────────
+gBrk     = "Break confirmation"
+brkBars  = input.int(2, "Closes outside required", minval = 1, group = gBrk)
+brkBuf   = input.float(0.0, "Break buffer % of band", minval = 0, step = 0.1, group = gBrk)
+keepOld  = input.int(6, "Historical bands kept", minval = 0, maxval = 50, group = gBrk)
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+edgeCol  = input.color(#FFFFFF, "Band edges",   group = gSty, inline = "c1")
+edgeWid  = input.int(1, "Width", minval = 1, maxval = 4, group = gSty, inline = "c1")
+liveCol  = input.color(#9AA0A6, "Active fill",  group = gSty, inline = "c2")
+upCol    = input.color(#1B7F4B, "Broken up",    group = gSty, inline = "c2")
+dnCol    = input.color(#8E2A3B, "Broken down",  group = gSty, inline = "c2")
+fillT    = input.int(88, "Fill transparency", minval = 0, maxval = 100, group = gSty)
+showMid  = input.bool(true, "Show centre line", group = gSty)
+showBrk  = input.bool(true, "Mark confirmed breaks", group = gSty)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  WINDOW STATS
+// ═════════════════════════════════════════════════════════════════════════════
+atr       = ta.atr(atrLen)
+winHi     = ta.highest(high, winLen)
+winLo     = ta.lowest(low,   winLen)
+winMid    = math.avg(winHi, winLo)
+rangePct  = winMid != 0 ? (winHi - winLo) / winMid * 100 : 0.0
+bandH     = winHi - winLo
+atrOk     = bandH > 0 and atr / bandH >= minAtr
+
+// how many times price crossed the window midpoint inside the window
+crossUp   = close > winMid and close[1] <= winMid
+crossDn   = close < winMid and close[1] >= winMid
+taps      = math.sum(crossUp ? 1 : 0, winLen) + math.sum(crossDn ? 1 : 0, winLen)
+
+isBalance = rangePct >= minRange and rangePct <= maxRange and taps >= minTaps and atrOk
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  BAND STATE MACHINE
+// ═════════════════════════════════════════════════════════════════════════════
+var box   curBox   = na
+var line  curMid   = na
+var float bandHi   = na
+var float bandLo   = na
+var bool  active   = false
+var int   outUp    = 0
+var int   outDn    = 0
+var array<box>  oldBoxes = array.new<box>()
+var array<line> oldMids  = array.new<line>()
+
+f_retire(_b, _l) =>
+    if not na(_b)
+        array.push(oldBoxes, _b)
+    if not na(_l)
+        array.push(oldMids, _l)
+    while array.size(oldBoxes) > keepOld
+        box.delete(array.shift(oldBoxes))
+    while array.size(oldMids) > keepOld
+        line.delete(array.shift(oldMids))
+
+buf       = na(bandHi) ? 0.0 : (bandHi - bandLo) * brkBuf / 100.0
+brokeUp   = active and close > bandHi + buf
+brokeDn   = active and close < bandLo - buf
+outUp    := brokeUp ? outUp + 1 : 0
+outDn    := brokeDn ? outDn + 1 : 0
+confirmUp = active and outUp >= brkBars
+confirmDn = active and outDn >= brkBars
+
+if active
+    if confirmUp or confirmDn
+        // freeze the band where the break was confirmed and colour the result
+        box.set_bgcolor(curBox, color.new(confirmUp ? upCol : dnCol, fillT))
+        f_retire(curBox, curMid)
+        curBox := na
+        curMid := na
+        active := false
+        outUp  := 0
+        outDn  := 0
+    else
+        box.set_right(curBox, bar_index + 1)
+        if not na(curMid)
+            line.set_x2(curMid, bar_index + 1)
+
+if not active and isBalance and not confirmUp and not confirmDn and bar_index > winLen
+    bandHi := winHi
+    bandLo := winLo
+    active := true
+    curBox := box.new(bar_index - winLen + 1, bandHi, bar_index + 1, bandLo,
+         border_color = edgeCol, border_width = edgeWid,
+         bgcolor = color.new(liveCol, fillT))
+    curMid := showMid ? line.new(bar_index - winLen + 1, math.avg(bandHi, bandLo),
+         bar_index + 1, math.avg(bandHi, bandLo),
+         color = color.new(edgeCol, 35), style = line.style_dotted) : na
+
+plotshape(showBrk and confirmUp and not confirmUp[1], "Break ↑", shape.triangleup,
+     location.belowbar, upCol, size = size.tiny)
+plotshape(showBrk and confirmDn and not confirmDn[1], "Break ↓", shape.triangledown,
+     location.abovebar, dnCol, size = size.tiny)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(confirmUp and not confirmUp[1], "Uranium break up",   "Uranium Band: confirmed break UP on {{ticker}}")
+alertcondition(confirmDn and not confirmDn[1], "Uranium break down", "Uranium Band: confirmed break DOWN on {{ticker}}")
+alertcondition(isBalance and not isBalance[1], "Balance detected",   "Uranium Band: balance zone forming on {{ticker}}")

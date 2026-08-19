@@ -1,0 +1,136 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — SILVER FLOW
+//  A "who's in control" oscillator. Flow is split into two camps and both are
+//  plotted as a share of control (0-100), with a shaded control zone between
+//  them whose tone changes as control strengthens or fades.
+//    Gold line  = whales / steady flow      White line = fast, reactive money
+//    ★ cyan    = whale flow overtakes hot money (control to the bankers)
+//    ★ magenta = hot money overtakes the steady flow
+//  Gold rising and above 50 = stable control, cleaner trend conditions.
+//  White surging while gold is weak = violent swings and failure risk.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Silver Flow", "Silver Flow", overlay = false, max_bars_back = 5000)
+
+// ── Flow ─────────────────────────────────────────────────────────────────────
+gFlow    = "Flow"
+whaleLen = input.int(21, "Whale flow smoothing",   minval = 1, group = gFlow)
+whaleVL  = input.int(50, "Whale volume baseline",  minval = 1, group = gFlow)
+whaleMlt = input.float(1.5, "Whale volume ×", minval = 1.0, step = 0.1, group = gFlow,
+     tooltip = "A bar only counts as whale flow when its volume clears the baseline average by this multiple.")
+reactLen = input.int(14, "Reactive flow length",   minval = 1, group = gFlow)
+reactSm  = input.int(3,  "Reactive smoothing",     minval = 1, group = gFlow)
+normLen  = input.int(200, "Control normalisation lookback", minval = 20, group = gFlow)
+
+// ── Market internals (optional — from the original spec) ─────────────────────
+gInt     = "Market internals (optional)"
+useInt   = input.bool(false, "Blend PCR / VIX / breadth into the whale line", group = gInt,
+     tooltip = "Off by default so the reading stays symbol-specific. Turn it on to fold broad-market flow into the gold line. Any feed your plan does not carry drops out of the blend automatically.")
+wVol     = input.float(0.60, "Volume weight",     minval = 0, maxval = 1, step = 0.05, group = gInt)
+wPcr     = input.float(0.15, "Put/Call weight",   minval = 0, maxval = 1, step = 0.05, group = gInt)
+wVix     = input.float(0.15, "VIX weight",        minval = 0, maxval = 1, step = 0.05, group = gInt)
+wMc      = input.float(0.10, "Breadth weight",    minval = 0, maxval = 1, step = 0.05, group = gInt)
+intTf    = input.timeframe("", "Internals timeframe (blank = chart)", group = gInt)
+pcrSym   = input.symbol("USI:PCC",     "Put/Call ratio",   group = gInt)
+vixSym   = input.symbol("CBOE:VIX",    "Volatility index", group = gInt)
+advSym   = input.symbol("USI:ADVN.NY", "Advancing issues", group = gInt)
+decSym   = input.symbol("USI:DECL.NY", "Declining issues", group = gInt)
+mcFastL  = input.int(19, "McClellan fast EMA", minval = 1, group = gInt, inline = "mc")
+mcSlowL  = input.int(39, "slow EMA",           minval = 1, group = gInt, inline = "mc")
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+goldCol  = input.color(#C9A227, "Whale (gold)",     group = gSty, inline = "c")
+whiteCol = input.color(#FFFFFF, "Reactive (white)", group = gSty, inline = "c")
+zoneT    = input.int(78, "Control zone transparency", minval = 0, maxval = 100, group = gSty)
+toneStep = input.int(12, "Fade when control is slipping", minval = 0, maxval = 40, group = gSty)
+showLvls = input.bool(true, "Show 50 level", group = gSty)
+
+// ── Stars ────────────────────────────────────────────────────────────────────
+gStar    = "Stars"
+showStar = input.bool(true, "Show stars", group = gStar)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
+bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+f_norm(_src, _len) =>
+    hi  = ta.highest(_src, _len)
+    lo  = ta.lowest(_src, _len)
+    rng = hi - lo
+    na(rng) or rng <= 0 ? 50.0 : (_src - lo) / rng * 100.0
+
+f_req(_sym, _tf) =>
+    request.security(_sym, _tf == "" ? timeframe.period : _tf, close, ignore_invalid_symbol = true)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  WHALE FLOW (gold)
+// ═════════════════════════════════════════════════════════════════════════════
+vol        = nz(volume)
+barRng     = high - low
+bodyRatio  = barRng > 0 ? (close - open) / barRng : 0.0
+volBase    = ta.sma(vol, whaleVL)
+isWhale    = vol > volBase * whaleMlt
+whaleRaw   = ta.ema(isWhale ? vol * bodyRatio : 0.0, whaleLen)
+volScore   = f_norm(whaleRaw, normLen)
+
+pcr        = f_req(pcrSym, intTf)
+vix        = f_req(vixSym, intTf)
+advn       = f_req(advSym, intTf)
+decl       = f_req(decSym, intTf)
+netAdv     = nz(advn) - nz(decl)
+mcOsc      = ta.ema(netAdv, mcFastL) - ta.ema(netAdv, mcSlowL)
+pcrScore   = 100.0 - f_norm(nz(pcr, 1.0),  normLen)   // low put/call  = bullish
+vixScore   = 100.0 - f_norm(nz(vix, 20.0), normLen)   // low volatility= bullish
+mcScore    = f_norm(mcOsc, normLen)
+
+float acc  = volScore * wVol
+float wSum = wVol
+if useInt and not na(pcr) and wPcr > 0
+    acc  := acc + pcrScore * wPcr
+    wSum := wSum + wPcr
+if useInt and not na(vix) and wVix > 0
+    acc  := acc + vixScore * wVix
+    wSum := wSum + wVix
+if useInt and netAdv != 0 and wMc > 0
+    acc  := acc + mcScore * wMc
+    wSum := wSum + wMc
+
+whaleLine  = ta.ema(wSum > 0 ? acc / wSum : 50.0, math.max(1, int(whaleLen / 3)))
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  REACTIVE FLOW (white)
+// ═════════════════════════════════════════════════════════════════════════════
+mfi        = ta.mfi(hlc3, reactLen)
+reactLine  = ta.ema(mfi, reactSm)
+
+whaleCtrl  = whaleLine > reactLine
+gaining    = whaleLine > whaleLine[1]
+zoneCol    = color.new(whaleCtrl ? goldCol : whiteCol,
+     math.min(99, zoneT + (whaleCtrl == gaining ? 0 : toneStep)))
+
+pWhale = plot(whaleLine, "Whale flow",    color = goldCol,  linewidth = 2)
+pReact = plot(reactLine, "Reactive flow", color = whiteCol, linewidth = 2)
+fill(pWhale, pReact, color = zoneCol, title = "Control zone")
+plot(showLvls ? 50 : na, "50", color = color.new(color.gray, 60))
+
+// ── Stars: the bar control changes hands ─────────────────────────────────────
+bullStar = ta.crossover(whaleLine,  reactLine)
+bearStar = ta.crossunder(whaleLine, reactLine)
+starY    = math.avg(whaleLine, reactLine)
+szT      = starSz == "Tiny"
+szS      = starSz == "Small"
+szN      = starSz == "Normal"
+
+plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny)
+plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small)
+plotchar(showStar and szN and bullStar ? starY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal)
+plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny)
+plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small)
+plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(bullStar, "Silver — whales take control", "Silver Flow: whale flow overtook hot money on {{ticker}}")
+alertcondition(bearStar, "Silver — hot money takes over", "Silver Flow: hot money overtook whale flow on {{ticker}}")
+alertcondition(ta.crossover(whaleLine, 50),  "Whale control above 50", "Silver Flow: whale control crossed above 50 on {{ticker}}")
+alertcondition(ta.crossunder(whaleLine, 50), "Whale control below 50", "Silver Flow: whale control crossed below 50 on {{ticker}}")

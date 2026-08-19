@@ -1,0 +1,89 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — NEON STACK
+//  Momentum alignment meter. Three speed layers of the same oscillator become a
+//  "stack": fast over mid over slow = clean bullish momentum, reversed = clean
+//  bearish. The midline is wrapped in a band that expands as separation grows
+//  (strong push) and contracts as it shrinks (chop). Band colour = stack state.
+//    ★ cyan    = stack flips into bullish alignment
+//    ★ magenta = stack flips into bearish alignment
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Neon Stack", "Neon Stack", overlay = false)
+
+// ── Stack ────────────────────────────────────────────────────────────────────
+gStk     = "Stack"
+src      = input.source(close, "Source",                    group = gStk)
+oscLen   = input.int(14, "Oscillator length", minval = 1,   group = gStk)
+fastLen  = input.int(3,  "Fast layer", minval = 1,          group = gStk, inline = "l")
+midLen   = input.int(7,  "Mid layer",  minval = 1,          group = gStk, inline = "l")
+slowLen  = input.int(14, "Slow layer", minval = 1,          group = gStk, inline = "l")
+bandMlt  = input.float(1.6, "Band width ×", minval = 0.1, step = 0.1, group = gStk)
+bandMin  = input.float(1.0, "Min band half-width", minval = 0, step = 0.5, group = gStk,
+     tooltip = "Keeps the ribbon visible through compression instead of collapsing to a line.")
+pinchLvl = input.float(2.0, "Compression threshold", minval = 0.1, step = 0.1, group = gStk)
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+neonCol  = input.color(#39FF14, "Neon (fast line)",  group = gSty, inline = "c1")
+stackCol = input.color(#C4C9D0, "Stack (mid line)",  group = gSty, inline = "c1")
+bearCol2 = input.color(#8E97A3, "Bearish band",      group = gSty, inline = "c2")
+bandT    = input.int(55, "Band transparency", minval = 0, maxval = 100, group = gSty)
+showLvls = input.bool(true, "Show 30 / 50 / 70 levels", group = gSty)
+
+// ── Stars ────────────────────────────────────────────────────────────────────
+gStar    = "Stars"
+showStar = input.bool(true, "Show stars",             group = gStar)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starGap  = input.float(8.0, "Star gap below the band", minval = 0, step = 0.5, group = gStar)
+bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
+bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
+
+// ═════════════════════════════════════════════════════════════════════════════
+osc      = ta.rsi(src, oscLen)
+fast     = ta.ema(osc, fastLen)
+mid      = ta.ema(osc, midLen)
+slow     = ta.ema(osc, slowLen)
+
+stackUp  = fast > mid and mid > slow
+stackDn  = fast < mid and mid < slow
+sep      = math.abs(fast - slow)
+half     = math.max(sep * 0.5 * bandMlt, bandMin)
+upper    = mid + half
+lower    = mid - half
+pinched  = sep < pinchLvl
+
+var bool bullState = false
+bullState := stackUp ? true : stackDn ? false : bullState
+bandCol   = bullState ? neonCol : bearCol2
+
+pUp = plot(upper, "Band upper", color = color.new(bandCol, math.min(99, bandT + 25)), linewidth = 1)
+pDn = plot(lower, "Band lower", color = color.new(bandCol, math.min(99, bandT + 25)), linewidth = 1)
+fill(pUp, pDn, color = color.new(bandCol, pinched ? math.min(99, bandT + 20) : bandT), title = "Stack band")
+
+plot(mid,  "Stack line", color = color.new(stackCol, 0), linewidth = 2)
+plot(fast, "Neon line",  color = neonCol, linewidth = 2)
+
+plot(showLvls ? 50 : na, "50", color = color.new(color.gray, 60))
+plot(showLvls ? 70 : na, "70", color = color.new(color.gray, 85))
+plot(showLvls ? 30 : na, "30", color = color.new(color.gray, 85))
+
+// ── Stars: the bar the stack flips ───────────────────────────────────────────
+bullStar = stackUp and not stackUp[1]
+bearStar = stackDn and not stackDn[1]
+starY    = math.max(1.0, lower - starGap)
+szT      = starSz == "Tiny"
+szS      = starSz == "Small"
+szN      = starSz == "Normal"
+
+plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny)
+plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small)
+plotchar(showStar and szN and bullStar ? starY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal)
+plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny)
+plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small)
+plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(bullStar, "Neon Stack — bullish alignment", "Neon Stack: stack flipped BULLISH on {{ticker}}")
+alertcondition(bearStar, "Neon Stack — bearish alignment", "Neon Stack: stack flipped BEARISH on {{ticker}}")
+alertcondition(pinched and not pinched[1], "Neon Stack — compression", "Neon Stack: ribbon compressing on {{ticker}}")
+alertcondition(not pinched and pinched[1], "Neon Stack — expansion",   "Neon Stack: ribbon expanding on {{ticker}}")

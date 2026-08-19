@@ -1,0 +1,84 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — SAUL'S WATCH
+//  Compact multi-timeframe trend table. Each timeframe is labelled BULL, BEAR or
+//  NEUTRAL from the Gold Regime engine, so the table and the candles always tell
+//  the same story. Trade with the higher-timeframe bias, enter on the lower ones.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Saul's Watch", "Saul's Watch", overlay = true)
+
+// ── Timeframes ───────────────────────────────────────────────────────────────
+gTf      = "Timeframes"
+tf1      = input.timeframe("60", "TF 1", group = gTf)
+tf2      = input.timeframe("240","TF 2", group = gTf)
+tf3      = input.timeframe("D",  "TF 3", group = gTf)
+tf4      = input.timeframe("W",  "TF 4", group = gTf)
+tf5      = input.timeframe("M",  "TF 5", group = gTf)
+
+// ── Regime engine (identical to Gold Regime) ─────────────────────────────────
+gEng     = "Regime engine"
+fastLen  = input.int(12, "MACD fast", minval = 1, group = gEng, inline = "m")
+slowLen  = input.int(26, "slow",      minval = 1, group = gEng, inline = "m")
+sigLen   = input.int(9,  "signal",    minval = 1, group = gEng, inline = "m")
+trendLen = input.int(50, "Regime trend length", minval = 1, group = gEng)
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+//  the option values ARE the built-in constants, which keeps them input-qualified
+tblPos   = input.string(position.top_right, "Table position",
+     options = [position.top_right, position.top_left, position.middle_right,
+     position.bottom_right, position.bottom_left], group = gSty)
+txtSize  = input.string(size.small, "Text size",
+     options = [size.tiny, size.small, size.normal], group = gSty)
+goldCol  = input.color(#C9A227, "BULL",    group = gSty, inline = "c")
+grayCol  = input.color(#8E97A3, "BEAR",    group = gSty, inline = "c")
+neutCol  = input.color(#4A5058, "NEUTRAL", group = gSty, inline = "c")
+showChart= input.bool(true, "Include the chart timeframe", group = gSty)
+
+// ═════════════════════════════════════════════════════════════════════════════
+f_regime() =>
+    [m, s, h] = ta.macd(close, fastLen, slowLen, sigLen)
+    trendMa   = ta.ema(close, trendLen)
+    momBull   = m > s
+    trendBull = close > trendMa
+    var bool g = false
+    g := momBull and trendBull ? true : not momBull and not trendBull ? false : g
+    momBull == trendBull ? (g ? 1 : -1) : 0
+
+st0 = f_regime()
+st1 = request.security(syminfo.tickerid, tf1, f_regime(), lookahead = barmerge.lookahead_off)
+st2 = request.security(syminfo.tickerid, tf2, f_regime(), lookahead = barmerge.lookahead_off)
+st3 = request.security(syminfo.tickerid, tf3, f_regime(), lookahead = barmerge.lookahead_off)
+st4 = request.security(syminfo.tickerid, tf4, f_regime(), lookahead = barmerge.lookahead_off)
+st5 = request.security(syminfo.tickerid, tf5, f_regime(), lookahead = barmerge.lookahead_off)
+
+f_label(_s) =>
+    _s == 1 ? "BULL" : _s == -1 ? "BEAR" : "NEUTRAL"
+
+f_col(_s) =>
+    _s == 1 ? goldCol : _s == -1 ? grayCol : neutCol
+
+var table tbl = table.new(tblPos, 2, 7, border_width = 1,
+     frame_color = color.new(color.gray, 55), frame_width = 1)
+
+f_row(_r, _name, _state) =>
+    table.cell(tbl, 0, _r, _name, text_color = color.new(#D6DAE0, 0), text_size = txtSize,
+         bgcolor = color.new(color.black, 25))
+    table.cell(tbl, 1, _r, f_label(_state), text_color = color.new(color.black, 0), text_size = txtSize,
+         bgcolor = color.new(f_col(_state), 10))
+
+if barstate.islast
+    table.clear(tbl, 0, 0, 1, 6)
+    r = 0
+    if showChart
+        f_row(r, "Chart · " + timeframe.period, st0)
+        r += 1
+    f_row(r,     tf1, st1)
+    f_row(r + 1, tf2, st2)
+    f_row(r + 2, tf3, st3)
+    f_row(r + 3, tf4, st4)
+    f_row(r + 4, tf5, st5)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(st4 == 1 and st4[1] != 1,   "TF4 → BULL", "Saul's Watch: TF4 flipped BULL on {{ticker}}")
+alertcondition(st4 == -1 and st4[1] != -1, "TF4 → BEAR", "Saul's Watch: TF4 flipped BEAR on {{ticker}}")
