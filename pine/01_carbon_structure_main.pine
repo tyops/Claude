@@ -1,0 +1,363 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ThetaDaddy — CARBON STRUCTURE   ·   Main chart overlay   (1 of 4)
+//  Gold Regime · Uranium Band · Control Line · Volume Planes · MA Stack · Stars
+//
+//  Engine: RSI + MACD + ATR + VWAP + Volume, filtered by market internals
+//          (Put/Call Ratio, VIX, McClellan advance/decline + divergence).
+//  Blue  ★ = bullish momentum / control change
+//  Purple★ = bearish momentum / control change
+//  Stars are context, not automatic entries.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("ThetaDaddy — Carbon Structure", "Carbon Structure", overlay = true,
+     max_lines_count = 500, max_labels_count = 100, max_bars_back = 5000)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ①  CORE ENGINE — every lookback is user editable
+// ─────────────────────────────────────────────────────────────────────────────
+gCore    = "①  Core engine — lookbacks"
+rsiLen   = input.int(14, "RSI length",                minval = 1,  group = gCore, inline = "rsi")
+rsiUpLvl = input.int(50, "cross ↑",                   minval = 1, maxval = 99, group = gCore, inline = "rsi")
+rsiDnLvl = input.int(50, "cross ↓",                   minval = 1, maxval = 99, group = gCore, inline = "rsi")
+macdFast = input.int(12, "MACD fast",                 minval = 1,  group = gCore, inline = "macd")
+macdSlow = input.int(26, "slow",                      minval = 1,  group = gCore, inline = "macd")
+macdSig  = input.int(9,  "signal",                    minval = 1,  group = gCore, inline = "macd")
+atrLen   = input.int(14, "ATR length",                minval = 1,  group = gCore)
+vwapLen  = input.int(50, "VWAP length (rolling)",     minval = 1,  group = gCore)
+volLen   = input.int(20, "Volume average length",     minval = 1,  group = gCore)
+srcCore  = input.source(close, "Signal source",                    group = gCore)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ②  CONTROL LINE  — the buyers / sellers baseline
+// ─────────────────────────────────────────────────────────────────────────────
+gCtrl    = "②  Control Line"
+showCtrl = input.bool(true,  "Show Control Line", group = gCtrl)
+ctrlMode = input.string("Rolling VWAP", "Mode",
+     options = ["Rolling VWAP", "Session VWAP", "VWMA", "EMA"], group = gCtrl)
+ctrlCol  = input.color(#C06C7A, "Colour", group = gCtrl, inline = "cs")
+ctrlWid  = input.int(2, "Width", minval = 1, maxval = 6, group = gCtrl, inline = "cs")
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ③  GOLD REGIME — barcolor
+// ─────────────────────────────────────────────────────────────────────────────
+gReg     = "③  Gold Regime"
+paintBar = input.bool(true,  "Paint candles by regime",             group = gReg)
+solidBod = input.bool(false, "Solid bodies (plotcandle overlay)",   group = gReg)
+regMaLen = input.int(50, "Regime trend MA length", minval = 1,      group = gReg)
+regSlope = input.int(5,  "Trend slope lookback",   minval = 1,      group = gReg)
+regVolML = input.float(1.0, "Volume participation multiple", minval = 0.1, step = 0.1, group = gReg,
+     tooltip = "Regime needs volume support: volume EMA must sit above the long volume average × this multiple.")
+goldCol  = input.color(#C9A227, "Bull (gold)", group = gReg, inline = "rc")
+grayCol  = input.color(#9AA0A6, "Bear (gray)", group = gReg, inline = "rc")
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ④  URANIUM BAND — ATR balance / breakout envelope
+// ─────────────────────────────────────────────────────────────────────────────
+gBand    = "④  Uranium Band"
+showBand = input.bool(true, "Show Uranium Band",                    group = gBand)
+bandLen  = input.int(20,  "Band basis length", minval = 1,          group = gBand)
+bandMult = input.float(1.8, "ATR multiple", minval = 0.1, step = 0.1, group = gBand)
+bandFill = input.int(88, "Cloud transparency", minval = 0, maxval = 100, group = gBand)
+bandWid  = input.int(1, "Band line width", minval = 1, maxval = 4, group = gBand)
+sqzLen   = input.int(100, "Squeeze / expansion lookback", minval = 10, group = gBand)
+markBrk  = input.bool(true, "Mark closes outside the band",         group = gBand)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑤  MA STACK — the fan behind price
+// ─────────────────────────────────────────────────────────────────────────────
+gStack   = "⑤  MA Stack"
+showStk  = input.bool(true, "Show MA Stack", group = gStack)
+stkBase  = input.int(20, "Base length", minval = 1, group = gStack)
+stkTrans = input.int(55, "Transparency", minval = 0, maxval = 100, group = gStack)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑥  VOLUME PLANES — high volume nodes (VPVR-lite)
+// ─────────────────────────────────────────────────────────────────────────────
+gVP      = "⑥  Volume Planes"
+showVP   = input.bool(true, "Show Volume Planes",                   group = gVP)
+vpLook   = input.int(200, "Lookback bars", minval = 20, maxval = 500, group = gVP)
+vpBins   = input.int(48,  "Price bins",    minval = 10, maxval = 200, group = gVP)
+vpNodes  = input.int(4,   "Number of planes", minval = 1, maxval = 12, group = gVP)
+vpExt    = input.int(20,  "Extend right (bars)", minval = 0, maxval = 300, group = gVP)
+vpCol    = input.color(#C9A227, "Plane colour", group = gVP, inline = "vp")
+vpTrans  = input.int(35, "Transparency", minval = 0, maxval = 100, group = gVP, inline = "vp")
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑦  MARKET INTERNALS — PCR / VIX / McClellan
+// ─────────────────────────────────────────────────────────────────────────────
+gInt     = "⑦  Market internals"
+useInt   = input.bool(true, "Use internals as a signal filter",     group = gInt)
+intVotes = input.int(2, "Minimum votes required (of 3)", minval = 0, maxval = 3, group = gInt)
+intTf    = input.timeframe("", "Internals timeframe (blank = chart)", group = gInt)
+pcrSym   = input.symbol("USI:PCC",      "Put/Call ratio",  group = gInt)
+vixSym   = input.symbol("CBOE:VIX",     "Volatility index", group = gInt)
+advSym   = input.symbol("USI:ADVN.NY",  "Advancing issues", group = gInt)
+decSym   = input.symbol("USI:DECL.NY",  "Declining issues", group = gInt)
+intSmooth= input.int(20, "Internals smoothing", minval = 1,        group = gInt)
+mcFastL  = input.int(19, "McClellan fast EMA", minval = 1,         group = gInt, inline = "mc")
+mcSlowL  = input.int(39, "slow EMA",           minval = 1,         group = gInt, inline = "mc")
+divLook  = input.int(20, "McClellan divergence lookback", minval = 5, group = gInt)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑧  STARS
+// ─────────────────────────────────────────────────────────────────────────────
+gStar    = "⑧  Stars"
+showStar = input.bool(true, "Show stars",                          group = gStar)
+cooldown = input.int(5, "Cooldown bars between same-side stars", minval = 0, group = gStar)
+needReg  = input.bool(false, "Require regime agreement",           group = gStar)
+bullCol  = input.color(#00E5FF, "Blue ★ (bullish)",  group = gStar, inline = "sc")
+bearCol  = input.color(#FF00E0, "Purple ★ (bearish)", group = gStar, inline = "sc")
+showTbl  = input.bool(true, "Show status table",                   group = gStar)
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+f_norm(_src, _len) =>
+    hi  = ta.highest(_src, _len)
+    lo  = ta.lowest(_src, _len)
+    rng = hi - lo
+    na(rng) or rng <= 0 ? 50.0 : (_src - lo) / rng * 100.0
+
+f_req(_sym, _tf) =>
+    request.security(_sym, _tf == "" ? timeframe.period : _tf, close,
+         ignore_invalid_symbol = true)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  CORE CALCULATIONS
+// ═════════════════════════════════════════════════════════════════════════════
+vol           = nz(volume)
+atr           = ta.atr(atrLen)
+rsi           = ta.rsi(srcCore, rsiLen)
+[macdLine, sigLine, macdHist] = ta.macd(srcCore, macdFast, macdSlow, macdSig)
+
+// ── Control Line ─────────────────────────────────────────────────────────────
+volSum        = math.sum(vol, vwapLen)
+rollVwap      = volSum > 0 ? math.sum(hlc3 * vol, vwapLen) / volSum : ta.ema(hlc3, vwapLen)
+// anchored VWAP built by hand so it never errors on volume-less symbols
+anchorTf      = timeframe.isintraday ? "D" : timeframe.isdaily ? "M" : "12M"
+newSession    = timeframe.change(anchorTf)
+var float cumPV = 0.0
+var float cumV  = 0.0
+if newSession
+    cumPV := 0.0
+    cumV  := 0.0
+cumPV        += hlc3 * vol
+cumV         += vol
+sessVwap      = cumV > 0 ? cumPV / cumV : hlc3
+vwma          = ta.vwma(close, vwapLen)
+emaCtrl       = ta.ema(close, vwapLen)
+control       = switch ctrlMode
+    "Rolling VWAP" => rollVwap
+    "Session VWAP" => sessVwap
+    "VWMA"         => vwma
+    => emaCtrl
+
+// ── Gold Regime ──────────────────────────────────────────────────────────────
+regMa         = ta.ema(close, regMaLen)
+maRising      = regMa > regMa[regSlope]
+volFast       = ta.ema(vol, math.max(1, int(volLen / 2)))
+volBase       = ta.sma(vol, volLen)
+volSupport    = volFast > volBase * regVolML
+obvSlope      = ta.obv - ta.obv[regSlope]
+
+bullTrig      = close > regMa and close > control and maRising and (volSupport or obvSlope > 0)
+bearTrig      = close < regMa and close < control and not maRising and (obvSlope < 0 or not volSupport)
+
+var bool goldRegime = false
+goldRegime := bullTrig ? true : bearTrig ? false : goldRegime
+regimeCol     = goldRegime ? goldCol : grayCol
+
+barcolor(paintBar ? regimeCol : na, title = "Gold Regime")
+plotcandle(solidBod ? open : na, solidBod ? high : na, solidBod ? low : na, solidBod ? close : na,
+     "Regime candles", color = regimeCol, wickcolor = regimeCol, bordercolor = regimeCol)
+
+// ── Uranium Band ─────────────────────────────────────────────────────────────
+bandBasis     = ta.ema(hlc3, bandLen)
+bandUp        = bandBasis + atr * bandMult
+bandDn        = bandBasis - atr * bandMult
+bandWidth     = bandBasis != 0 ? (bandUp - bandDn) / bandBasis * 100 : 0.0
+widthRank     = f_norm(bandWidth, sqzLen)
+inSqueeze     = widthRank < 25            // pinched  = balance / chop
+inExpansion   = widthRank > 75            // expanded = trend leg
+breakUp       = close > bandUp
+breakDn       = close < bandDn
+
+// linewidth has to stay constant in plot(), so a break is shown by lighting the
+// band edge up instead of thickening it
+bandEdge = color.new(regimeCol, breakUp or breakDn ? 0 : 30)
+pBandUp = plot(showBand ? bandUp : na, "Uranium Upper", color = bandEdge, linewidth = bandWid)
+pBandDn = plot(showBand ? bandDn : na, "Uranium Lower", color = bandEdge, linewidth = bandWid)
+fill(pBandUp, pBandDn, color = color.new(regimeCol, inSqueeze ? math.min(99, bandFill + 6) : bandFill),
+     title = "Uranium cloud")
+plot(showBand ? bandBasis : na, "Uranium Basis", color = color.new(regimeCol, 45))
+
+plotshape(showBand and markBrk and breakUp and not breakUp[1], "Band break ↑", shape.triangleup,
+     location.belowbar, color.new(goldCol, 20), size = size.tiny)
+plotshape(showBand and markBrk and breakDn and not breakDn[1], "Band break ↓", shape.triangledown,
+     location.abovebar, color.new(grayCol, 20), size = size.tiny)
+
+// ── MA Stack ─────────────────────────────────────────────────────────────────
+ma1 = ta.ema(close, stkBase)
+ma2 = ta.ema(close, stkBase * 2)
+ma3 = ta.ema(close, stkBase * 3)
+ma4 = ta.ema(close, stkBase * 5)
+ma5 = ta.ema(close, stkBase * 8)
+stkUp = ma1 > ma2 and ma2 > ma3 and ma3 > ma4
+stkDn = ma1 < ma2 and ma2 < ma3 and ma3 < ma4
+stkCol = stkUp ? goldCol : stkDn ? grayCol : color.new(#B0B3B8, 0)
+plot(showStk ? ma1 : na, "MA 1", color = color.new(stkCol, stkTrans))
+plot(showStk ? ma2 : na, "MA 2", color = color.new(stkCol, stkTrans + 5 > 100 ? 100 : stkTrans + 5))
+plot(showStk ? ma3 : na, "MA 3", color = color.new(stkCol, stkTrans + 10 > 100 ? 100 : stkTrans + 10))
+plot(showStk ? ma4 : na, "MA 4", color = color.new(stkCol, stkTrans + 15 > 100 ? 100 : stkTrans + 15))
+plot(showStk ? ma5 : na, "MA 5", color = color.new(stkCol, stkTrans + 20 > 100 ? 100 : stkTrans + 20))
+
+// ── Control Line plot ────────────────────────────────────────────────────────
+plot(showCtrl ? control : na, "Control Line", color = ctrlCol, linewidth = ctrlWid)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  MARKET INTERNALS
+// ═════════════════════════════════════════════════════════════════════════════
+pcr        = f_req(pcrSym, intTf)
+vix        = f_req(vixSym, intTf)
+advn       = f_req(advSym, intTf)
+decl       = f_req(decSym, intTf)
+
+netAdv     = nz(advn) - nz(decl)
+mcOsc      = ta.ema(netAdv, mcFastL) - ta.ema(netAdv, mcSlowL)
+
+pcrAvg     = ta.ema(nz(pcr, 1.0), intSmooth)
+vixAvg     = ta.ema(nz(vix, 20.0), intSmooth)
+
+// low / falling PCR = calls in control · falling VIX = risk-on · McClellan > 0 = breadth
+pcrBull    = na(pcr) ? false : pcr < pcrAvg
+vixBull    = na(vix) ? false : vix < vixAvg
+mcBullBase = mcOsc > 0
+
+// McClellan divergence vs price
+priceHH    = close > ta.highest(close, divLook)[1]
+priceLL    = close < ta.lowest(close,  divLook)[1]
+mcLowerHi  = mcOsc < ta.highest(mcOsc, divLook)[1]
+mcHigherLo = mcOsc > ta.lowest(mcOsc,  divLook)[1]
+mcBearDiv  = priceHH and mcLowerHi        // price up, breadth not confirming
+mcBullDiv  = priceLL and mcHigherLo       // price down, breadth improving
+
+haveInt    = not na(pcr) or not na(vix) or netAdv != 0
+bullVotes  = (pcrBull ? 1 : 0) + (vixBull ? 1 : 0) + (mcBullBase or mcBullDiv ? 1 : 0)
+bearVotes  = (not pcrBull and not na(pcr) ? 1 : 0) + (not vixBull and not na(vix) ? 1 : 0) +
+             (not mcBullBase or mcBearDiv ? 1 : 0)
+intBull    = not useInt or not haveInt or bullVotes >= intVotes
+intBear    = not useInt or not haveInt or bearVotes >= intVotes
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  STAR ENGINE  (identical block in every script of this system)
+// ═════════════════════════════════════════════════════════════════════════════
+macdBull   = macdLine > sigLine
+macdBear   = macdLine < sigLine
+aboveCtrl  = close > control
+belowCtrl  = close < control
+rsiCrossUp = ta.crossover(rsi,  rsiUpLvl)
+rsiCrossDn = ta.crossunder(rsi, rsiDnLvl)
+
+bullRaw    = rsiCrossUp and macdBull and aboveCtrl and intBull and (not needReg or goldRegime)
+bearRaw    = rsiCrossDn and macdBear and belowCtrl and intBear and (not needReg or not goldRegime)
+
+var int lastBull = -99999
+var int lastBear = -99999
+bullStar   = bullRaw and (bar_index - lastBull) >= cooldown
+bearStar   = bearRaw and (bar_index - lastBear) >= cooldown
+if bullStar
+    lastBull := bar_index
+if bearStar
+    lastBear := bar_index
+
+//  plotchar draws the ★ glyph itself; plotshape has no star style.
+//  Change size.small to size.tiny / size.normal / size.large — it must stay a constant.
+plotchar(showStar and bullStar, "Blue ★ — bullish shift",   "★", location.belowbar,
+     bullCol, size = size.small)
+plotchar(showStar and bearStar, "Purple ★ — bearish shift", "★", location.abovebar,
+     bearCol, size = size.small)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  VOLUME PLANES — high volume nodes over the lookback window
+// ═════════════════════════════════════════════════════════════════════════════
+var array<line> planes = array.new<line>()
+vpHi = ta.highest(high, vpLook)
+vpLo = ta.lowest(low,   vpLook)
+
+if barstate.islast and showVP and bar_index > vpLook
+    for ln in planes                     // for..in is safe when the array is empty
+        line.delete(ln)
+    array.clear(planes)
+
+    binSize = (vpHi - vpLo) / vpBins
+    if binSize > 0
+        bins = array.new_float(vpBins, 0.0)
+        for i = 0 to vpLook - 1
+            h = nz(high[i])
+            l = nz(low[i])
+            v = nz(volume[i])
+            if v > 0 and h >= l
+                b1 = int(math.floor((l - vpLo) / binSize))
+                b2 = int(math.floor((h - vpLo) / binSize))
+                b1 := math.max(0, math.min(vpBins - 1, b1))
+                b2 := math.max(0, math.min(vpBins - 1, b2))
+                share = v / (b2 - b1 + 1)
+                for b = b1 to b2
+                    array.set(bins, b, array.get(bins, b) + share)
+
+        for k = 0 to vpNodes - 1
+            maxIdx = -1
+            maxVal = 0.0
+            for b = 0 to vpBins - 1
+                cur = array.get(bins, b)
+                if cur > maxVal
+                    maxVal := cur
+                    maxIdx := b
+            if maxIdx >= 0
+                price = vpLo + (maxIdx + 0.5) * binSize
+                ln = line.new(bar_index - vpLook + 1, price, bar_index + vpExt, price,
+                     xloc = xloc.bar_index,
+                     color = color.new(vpCol, math.min(99, vpTrans + k * 12)),
+                     width = k == 0 ? 3 : 1,
+                     style = k == 0 ? line.style_solid : line.style_dotted)
+                array.push(planes, ln)
+                // knock out the node and its neighbours so planes do not cluster
+                array.set(bins, maxIdx, 0.0)
+                if maxIdx > 0
+                    array.set(bins, maxIdx - 1, 0.0)
+                if maxIdx < vpBins - 1
+                    array.set(bins, maxIdx + 1, 0.0)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  STATUS TABLE
+// ═════════════════════════════════════════════════════════════════════════════
+var table tbl = table.new(position.top_right, 2, 5, border_width = 1,
+     frame_color = color.new(color.gray, 60), frame_width = 1)
+if showTbl and barstate.islast
+    txtCol = color.new(#E8E8E8, 0)
+    table.cell(tbl, 0, 0, "Regime",   text_color = txtCol, text_size = size.small, bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 1, 0, goldRegime ? "GOLD" : "GRAY", text_color = color.new(color.black, 0),
+         text_size = size.small, bgcolor = color.new(regimeCol, 10))
+    table.cell(tbl, 0, 1, "Band",     text_color = txtCol, text_size = size.small, bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 1, 1, breakUp ? "BREAK ↑" : breakDn ? "BREAK ↓" : inSqueeze ? "PINCHED" : inExpansion ? "EXPANDED" : "BALANCE",
+         text_color = txtCol, text_size = size.small, bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 0, 2, "Control",  text_color = txtCol, text_size = size.small, bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 1, 2, aboveCtrl ? "BUYERS" : "SELLERS", text_color = txtCol, text_size = size.small,
+         bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 0, 3, "Internals", text_color = txtCol, text_size = size.small, bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 1, 3, haveInt ? str.tostring(bullVotes) + " / 3 bull" : "n/a",
+         text_color = txtCol, text_size = size.small, bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 0, 4, "Breadth div", text_color = txtCol, text_size = size.small, bgcolor = color.new(color.black, 40))
+    table.cell(tbl, 1, 4, mcBearDiv ? "BEARISH" : mcBullDiv ? "BULLISH" : "—",
+         text_color = mcBearDiv ? bearCol : mcBullDiv ? bullCol : txtCol,
+         text_size = size.small, bgcolor = color.new(color.black, 40))
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  ALERTS
+// ═════════════════════════════════════════════════════════════════════════════
+alertcondition(bullStar,  "Blue ★ (bullish shift)",   "Carbon Structure: BLUE star on {{ticker}} @ {{close}}")
+alertcondition(bearStar,  "Purple ★ (bearish shift)", "Carbon Structure: PURPLE star on {{ticker}} @ {{close}}")
+alertcondition(goldRegime and not goldRegime[1], "Regime → GOLD", "Carbon Structure: regime flipped GOLD on {{ticker}}")
+alertcondition(not goldRegime and goldRegime[1], "Regime → GRAY", "Carbon Structure: regime flipped GRAY on {{ticker}}")
+alertcondition(breakUp and not breakUp[1], "Uranium break up",   "Carbon Structure: close above Uranium Band on {{ticker}}")
+alertcondition(breakDn and not breakDn[1], "Uranium break down", "Carbon Structure: close below Uranium Band on {{ticker}}")
