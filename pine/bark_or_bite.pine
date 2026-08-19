@@ -1,0 +1,147 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — BARK OR BITE
+//  A trend filter with a memory. Every trend pulls back; the question is whether
+//  the pullback in front of you looks like the ones this trend has already
+//  shrugged off, or like something bigger.
+//    BARK — the pullback sits inside what this trend has historically absorbed.
+//           Noise. The bias holds.
+//    BITE — the pullback breaks past the depth this trend has tolerated, and
+//           volume is behind it. Structural. The bias flips.
+//
+//  The indicator keeps a rolling memory of completed pullback depths, measured
+//  in ATR so it travels across symbols, and compares the live pullback against
+//  it. A trend that has been absorbing 2-ATR dips is not threatened by another
+//  2-ATR dip; the same dip in a trend that never gave back more than 0.8 is.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Bark or Bite", "Bark or Bite", overlay = true,
+     max_labels_count = 100)
+
+// ── Memory ───────────────────────────────────────────────────────────────────
+gMem     = "Memory"
+atrLen   = input.int(14, "ATR length", minval = 1, group = gMem)
+memSize  = input.int(8, "Pullbacks remembered", minval = 1, maxval = 50, group = gMem,
+     tooltip = "How many completed pullbacks the trend keeps in memory. Fewer makes it adapt quickly to a changing character; more makes it stubborn.")
+memMult  = input.float(1.4, "Bite multiple of the remembered average", minval = 1.0, step = 0.1, group = gMem,
+     tooltip = "A pullback has to exceed the average remembered depth by this multiple to count as a bite. Raise it to make the trend harder to break.")
+baseThr  = input.float(2.0, "Floor threshold (ATR)", minval = 0.1, step = 0.1, group = gMem,
+     tooltip = "Minimum depth for a bite before memory has built up, and a floor once it has. Stops a run of shallow pullbacks from setting a hair trigger.")
+minRec   = input.float(0.5, "Min depth worth remembering (ATR)", minval = 0, step = 0.1, group = gMem,
+     tooltip = "Pullbacks shallower than this are not recorded, so intrabar noise does not dilute the memory.")
+resetMem = input.bool(true, "Clear memory on a bite", group = gMem,
+     tooltip = "On: the new trend learns its own character from scratch. Off: memory carries across the flip.")
+
+// ── Volume confirmation ──────────────────────────────────────────────────────
+gVol     = "Volume"
+useVol   = input.bool(true, "Bite needs volume behind it", group = gVol, inline = "v")
+volLen   = input.int(20, "len", minval = 1, group = gVol, inline = "v")
+volMult  = input.float(1.0, "×", minval = 0.1, step = 0.1, group = gVol, inline = "v",
+     tooltip = "Volume on the bite bar must clear its average by this multiple. This is what separates a real structural break from a drift.")
+
+// ── Seed ─────────────────────────────────────────────────────────────────────
+gSeed    = "Seed"
+seedLen  = input.int(50, "Starting trend length", minval = 1, group = gSeed,
+     tooltip = "Only used for the very first bar, to decide which way the bias starts. After that the bias is entirely bite-driven.")
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+showBite = input.bool(true,  "Mark bites", group = gSty)
+showBark = input.bool(false, "Mark barks", group = gSty,
+     tooltip = "Every pullback that gets deep enough to be worth noticing but stays inside memory. Informative, but it prints often.")
+tintBars = input.bool(false, "Tint bars by bias", group = gSty,
+     tooltip = "Off by default so it does not fight Gold Regime's candle colours.")
+showStat = input.bool(true, "Show the status box", group = gSty)
+bullCol  = input.color(#00E5FF, "Bite up",   group = gSty, inline = "c")
+bearCol  = input.color(#FF00E0, "Bite down", group = gSty, inline = "c")
+barkCol  = input.color(#8E97A3, "Bark",      group = gSty, inline = "c")
+
+// ═════════════════════════════════════════════════════════════════════════════
+atr      = ta.atr(atrLen)
+seedMa   = ta.ema(close, seedLen)
+volAvg   = ta.sma(nz(volume), volLen)
+volOk    = not useVol or nz(volume) > volAvg * volMult
+
+var int   bias     = 0
+var float ref      = na            // the extreme this leg has reached
+var float pullPeak = 0.0           // deepest pullback inside the live leg
+var array<float> mem = array.new<float>()
+
+//  first bar of real data seeds the direction; everything after is bite-driven
+if bias == 0 and not na(seedMa)
+    bias := close > seedMa ? 1 : -1
+    ref  := close > seedMa ? high : low
+
+float curPull = 0.0
+bool  madeNew = false
+
+if bias == 1
+    madeNew := not na(ref) and high > ref
+    if madeNew
+        //  the leg extended, so whatever pullback preceded it is complete
+        if pullPeak >= minRec
+            array.push(mem, pullPeak)
+        pullPeak := 0.0
+        ref := high
+    ref := na(ref) ? high : ref
+    curPull := atr > 0 ? (ref - low) / atr : 0.0
+else if bias == -1
+    madeNew := not na(ref) and low < ref
+    if madeNew
+        if pullPeak >= minRec
+            array.push(mem, pullPeak)
+        pullPeak := 0.0
+        ref := low
+    ref := na(ref) ? low : ref
+    curPull := atr > 0 ? (high - ref) / atr : 0.0
+
+pullPeak := math.max(pullPeak, curPull)
+
+while array.size(mem) > memSize
+    array.shift(mem)
+
+memAvg   = array.size(mem) > 0 ? array.avg(mem) : na
+thresh   = na(memAvg) ? baseThr : math.max(baseThr, memAvg * memMult)
+noiseRat = thresh > 0 ? curPull / thresh : 0.0
+
+biteNow  = bias != 0 and curPull > thresh and volOk
+barkNow  = bias != 0 and not biteNow and curPull > thresh * 0.6 and curPull > nz(curPull[1])
+
+biteUp   = biteNow and bias == -1        // a bite against a down bias turns it up
+biteDn   = biteNow and bias == 1
+
+if biteNow
+    bias := bias == 1 ? -1 : 1
+    ref  := bias == 1 ? high : low
+    pullPeak := 0.0
+    if resetMem
+        array.clear(mem)
+
+// ── Plots ────────────────────────────────────────────────────────────────────
+biasCol = bias == 1 ? bullCol : bearCol
+barcolor(tintBars ? color.new(biasCol, 55) : na, title = "Bias tint")
+
+plotshape(showBite and biteUp, "Bite ▲", shape.triangleup,   location.belowbar, bullCol,
+     size = size.small, display = display.pane)
+plotshape(showBite and biteDn, "Bite ▼", shape.triangledown, location.abovebar, bearCol,
+     size = size.small, display = display.pane)
+plotshape(showBark and barkNow and bias == 1,  "Bark (uptrend)",   shape.circle, location.belowbar,
+     color.new(barkCol, 35), size = size.tiny, display = display.pane)
+plotshape(showBark and barkNow and bias == -1, "Bark (downtrend)", shape.circle, location.abovebar,
+     color.new(barkCol, 35), size = size.tiny, display = display.pane)
+
+// ── Status ───────────────────────────────────────────────────────────────────
+var label stat = na
+if showStat and barstate.islast
+    label.delete(stat)
+    txt = (bias == 1 ? "BITE ▲ long bias" : "BITE ▼ short bias") + "\npullback " +
+         str.tostring(curPull, "#.##") + " of " + str.tostring(thresh, "#.##") + " ATR" +
+         "\nmemory " + str.tostring(array.size(mem)) + " pullbacks" +
+         (na(memAvg) ? "" : ", avg " + str.tostring(memAvg, "#.##"))
+    stat := label.new(bar_index, high, txt, xloc = xloc.bar_index, yloc = yloc.price,
+         style = label.style_label_left, color = color.new(#0B0D11, 15),
+         textcolor = color.new(biasCol, 0), size = size.small)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(biteUp, "Bite — bias turns up",   "Bark or Bite: BITE on {{ticker}}, bias turns up")
+alertcondition(biteDn, "Bite — bias turns down", "Bark or Bite: BITE on {{ticker}}, bias turns down")
+alertcondition(barkNow, "Bark — pullback is noise", "Bark or Bite: bark on {{ticker}} — pullback inside what this trend absorbs")

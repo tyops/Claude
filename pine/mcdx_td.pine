@@ -1,0 +1,88 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — MCDX TD
+//  A participation lens. It splits the tape into three tiers of money and shows
+//  which one is doing the buying:
+//    Banker / smart money (red)   — large, slow, patient accumulation
+//    Hot money (yellow)           — fast speculative capital
+//    Retail (green)               — small lots, the crowd
+//  Rising red is the one that matters: institutions accumulating under price.
+//  Green dominance with no red is the crowd holding the bag into distribution.
+//
+//  Built on the published Multi-Color Dragon construction: each tier is an RSI
+//  of its own period, offset by a base level, scaled by a sensitivity, then
+//  clamped into a 0-20 band so the three are directly comparable.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — MCDX TD", "MCDX TD", overlay = false)
+
+// ── Banker / smart money ─────────────────────────────────────────────────────
+gBank    = "Banker (smart money)"
+bankLen  = input.int(50,  "RSI period",  minval = 1, group = gBank, inline = "b")
+bankBase = input.float(50, "base",       minval = 0, group = gBank, inline = "b")
+bankSens = input.float(1.5, "sensitivity", minval = 0.1, step = 0.1, group = gBank, inline = "b")
+bankMaLen= input.int(10, "Banker average length", minval = 1, group = gBank)
+showBmA  = input.bool(true, "Show the banker average", group = gBank)
+
+// ── Hot money ────────────────────────────────────────────────────────────────
+gHot     = "Hot money"
+hotLen   = input.int(40,  "RSI period",  minval = 1, group = gHot, inline = "h")
+hotBase  = input.float(30, "base",       minval = 0, group = gHot, inline = "h")
+hotSens  = input.float(0.7, "sensitivity", minval = 0.1, step = 0.1, group = gHot, inline = "h")
+
+// ── Retail ───────────────────────────────────────────────────────────────────
+gRet     = "Retail"
+retLen   = input.int(30,  "RSI period",  minval = 1, group = gRet, inline = "r")
+retBase  = input.float(20, "base",       minval = 0, group = gRet, inline = "r")
+retSens  = input.float(0.4, "sensitivity", minval = 0.1, step = 0.1, group = gRet, inline = "r")
+showRet  = input.bool(true, "Show the retail tier", group = gRet)
+
+// ── Scale ────────────────────────────────────────────────────────────────────
+gScale   = "Scale"
+src      = input.source(close, "Source", group = gScale)
+capVal   = input.float(20, "Tier ceiling", minval = 1, group = gScale,
+     tooltip = "Every tier is clamped between zero and this, so the three read on one comparable scale. 20 is the published value.")
+heavyLvl = input.float(10, "Heavy accumulation level", minval = 0, group = gScale,
+     tooltip = "Banker bars above this line are the accumulation reading the suite looks for before an entry.")
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+bankCol  = input.color(#E03C3C, "Banker",    group = gSty, inline = "c")
+hotCol   = input.color(#E5C04D, "Hot money", group = gSty, inline = "c")
+retCol   = input.color(#37C99E, "Retail",    group = gSty, inline = "c")
+maCol    = input.color(#FFFFFF, "Average",   group = gSty, inline = "c")
+bodyT    = input.int(15, "Bar transparency", minval = 0, maxval = 100, group = gSty)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  TIERS — RSI, offset by its base, scaled, then clamped into the band
+// ═════════════════════════════════════════════════════════════════════════════
+f_tier(_src, _len, _base, _sens, _cap) =>
+    raw = _sens * (ta.rsi(_src, _len) - _base)
+    math.min(math.max(raw, 0.0), _cap)
+
+banker   = f_tier(src, bankLen, bankBase, bankSens, capVal)
+hot      = f_tier(src, hotLen,  hotBase,  hotSens,  capVal)
+retail   = f_tier(src, retLen,  retBase,  retSens,  capVal)
+bankMa   = ta.sma(banker, bankMaLen)
+
+//  drawn widest first so the tiers stay readable where they overlap
+plot(showRet ? retail : na, "Retail",    color = color.new(retCol,  bodyT), style = plot.style_columns, histbase = 0)
+plot(hot,                   "Hot money", color = color.new(hotCol,  bodyT), style = plot.style_columns, histbase = 0)
+plot(banker,                "Banker",    color = color.new(bankCol, bodyT), style = plot.style_columns, histbase = 0)
+plot(showBmA ? bankMa : na, "Banker average", color = color.new(maCol, 25), linewidth = 1)
+hline(heavyLvl, "Heavy accumulation", color = color.new(color.gray, 55), linestyle = hline.style_dotted)
+
+// ── State ────────────────────────────────────────────────────────────────────
+bankRising  = banker > banker[1]
+bankHeavy   = banker >= heavyLvl
+bankLeads   = banker > hot and banker > retail
+retailLeads = retail > banker and retail > hot
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(bankHeavy and not bankHeavy[1], "Banker accumulation",
+     "MCDX TD: banker tier pushed into heavy accumulation on {{ticker}}")
+alertcondition(bankLeads and not bankLeads[1], "Banker takes the lead",
+     "MCDX TD: banker tier overtook hot money and retail on {{ticker}}")
+alertcondition(retailLeads and not retailLeads[1], "Retail leading",
+     "MCDX TD: retail is carrying this move on {{ticker}} — thin support under price")
+alertcondition(bankRising and banker >= heavyLvl and ta.rising(bankMa, 2), "Banker average rising",
+     "MCDX TD: banker accumulation building on {{ticker}}")

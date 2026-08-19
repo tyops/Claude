@@ -10,6 +10,8 @@ in the indicator book and the reference charts.
 | `pine/uranium_band.pine` | overlay | — | Balance-zone hunter: green panel with white rails at the zone high/low, extends while in balance, stops on a confirmed break. No stars — it is a structure tool |
 | `pine/control_line.pine` | overlay | — | The dusty-rose baseline. Above it favours buyers, below favours sellers |
 | `pine/air_pocket.pine` | overlay | — | Unfilled gaps, boxed and held open until price comes back and fills them |
+| `pine/bark_or_bite.pine` | overlay | — | Trend filter with a memory of past pullbacks: noise (bark) vs structural break (bite) |
+| `pine/mcdx_td.pine` | sub-pane | — | Participation lens — banker, hot money and retail tiers as a histogram |
 | `pine/volume_planes.pine` | overlay | — | Horizontal volume profile — high volume nodes, value area, POC |
 | `pine/neon_stack.pine` | sub-pane | ✅ | Momentum alignment meter — three speed layers as a stack, banded |
 | `pine/iron_momentum.pine` | sub-pane | ✅ | Fast momentum vs its baseline, gold = buyers control, gray = sellers |
@@ -144,6 +146,23 @@ magenta for a gap down, leaving air above. The box extends right, bar after bar,
 price comes back through it — then it is spent and disappears. *First touch* ends a pocket
 as soon as price reaches its near edge; the default *Fully closed* holds it until the whole
 gap is traded through.
+
+### Bark or Bite
+Every trend pulls back; the question is whether this pullback resembles the ones the trend
+has already absorbed. The indicator keeps a rolling memory of completed pullback depths,
+measured in ATR so it travels across symbols, and compares the live pullback against it. A
+**bark** sits inside that history — noise, bias holds. A **bite** exceeds the remembered
+average by the set multiple *and* carries above-average volume — structural, bias flips.
+Memory clears on a flip by default, so each new trend learns its own character. The status
+box shows the live pullback against the current threshold and how much memory has built up.
+
+### MCDX TD
+Three tiers of participation, each an RSI on its own period, offset by a base level, scaled
+by a sensitivity and clamped into a 0-20 band so they read on one scale. Banker (red) is the
+slow institutional tier, hot money (yellow) the fast speculative one, retail (green) the
+crowd. Rising red above the heavy-accumulation line is the reading that matters; retail
+leading with no red under it is thin support. Defaults follow the published Multi-Color
+Dragon values — banker RSI 50 base 50 at 1.5, hot money RSI 40 base 30 at 0.7.
 
 ### Saul's Watch
 Runs the Gold Regime engine on five configurable timeframes via `request.security` and
