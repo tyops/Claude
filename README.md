@@ -9,6 +9,7 @@ in the indicator book and the reference charts.
 | `pine/carbon_structure.pine` | overlay | — | Dynamic band around price: direction, pressure, expansion vs compression |
 | `pine/uranium_band.pine` | overlay | — | Balance-zone hunter: green panel with white rails at the zone high/low, extends while in balance, stops on a confirmed break. No stars — it is a structure tool |
 | `pine/control_line.pine` | overlay | — | The dusty-rose baseline. Above it favours buyers, below favours sellers |
+| `pine/air_pocket.pine` | overlay | — | Unfilled gaps, boxed and held open until price comes back and fills them |
 | `pine/volume_planes.pine` | overlay | — | Horizontal volume profile — high volume nodes, value area, POC |
 | `pine/neon_stack.pine` | sub-pane | ✅ | Momentum alignment meter — three speed layers as a stack, banded |
 | `pine/iron_momentum.pine` | sub-pane | ✅ | Fast momentum vs its baseline, gold = buyers control, gray = sellers |
@@ -120,6 +121,15 @@ default**, so the default read stays symbol-specific. Turn on *Blend PCR / VIX /
 to fold them into the gold line with the weights provided; feeds your plan does not carry
 (`USI:PCC`, `CBOE:VIX`, `USI:ADVN.NY`, `USI:DECL.NY`) return `na`, drop out of the blend and
 re-normalise the remaining weights instead of breaking anything.
+
+### Air Pocket
+A gap is a price range that never traded, and it stays a magnet until it does. Each gap
+that clears both size filters (percentage of price *and* a fraction of ATR, so the filter
+travels across symbols) gets a box: blue for a gap up, leaving unfilled air below price;
+magenta for a gap down, leaving air above. The box extends right, bar after bar, until
+price comes back through it — then it is spent and disappears. *First touch* ends a pocket
+as soon as price reaches its near edge; the default *Fully closed* holds it until the whole
+gap is traded through.
 
 ### Saul's Watch
 Runs the Gold Regime engine on five configurable timeframes via `request.security` and

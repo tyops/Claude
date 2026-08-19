@@ -1,0 +1,107 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — AIR POCKET
+//  Marks the gaps price left behind — the bar ranges that never traded. A pocket
+//  stays open, extending to the right, until price comes back and fills it, and
+//  it disappears the moment it is filled.
+//    Blue pocket    = gap up, unfilled air below price. Magnet and support.
+//    Magenta pocket = gap down, unfilled air above price. Magnet and resistance.
+//  They almost always get filled; the open ones tell you where price is drawn to.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Air Pocket", "Air Pocket", overlay = true,
+     max_boxes_count = 500, max_labels_count = 100)
+
+// ── Detection ────────────────────────────────────────────────────────────────
+gDet     = "Detection"
+minPct   = input.float(0.30, "Min gap size %", minval = 0.0, step = 0.05, group = gDet,
+     tooltip = "Gap height as a percentage of price. Filters the one-tick gaps that are not worth marking.")
+atrLen   = input.int(14, "ATR length", minval = 1, group = gDet, inline = "a")
+minAtr   = input.float(0.10, "min gap (ATR)", minval = 0, step = 0.05, group = gDet, inline = "a",
+     tooltip = "Second size test, so the filter travels across symbols with very different volatility. A gap has to clear both this and the percentage.")
+newDay   = input.bool(false, "Session gaps only", group = gDet,
+     tooltip = "Intraday charts only: keep the overnight gap at the open and ignore gaps that appear inside the session.")
+maxOpen  = input.int(20, "Max open pockets", minval = 1, maxval = 100, group = gDet,
+     tooltip = "Oldest unfilled pockets are dropped past this count.")
+
+// ── Fill rule ────────────────────────────────────────────────────────────────
+gFill    = "Fill rule"
+fillMode = input.string("Fully closed", "A pocket counts as filled when price",
+     options = ["Fully closed", "First touch"], group = gFill,
+     tooltip = "Fully closed: price has to trade through the far edge, closing the whole gap. First touch: the pocket is done as soon as price reaches its near edge.")
+keepFill = input.bool(false, "Leave filled pockets on the chart", group = gFill,
+     tooltip = "Off matches the reference charts — a filled pocket is spent, so it disappears. On leaves it behind, faded.")
+fadedT   = input.int(75, "Filled transparency", minval = 0, maxval = 100, group = gFill)
+
+// ── Style ────────────────────────────────────────────────────────────────────
+gSty     = "Style"
+upCol    = input.color(#00E5FF, "Gap up (air below)",   group = gSty, inline = "c1")
+dnCol    = input.color(#FF00E0, "Gap down (air above)", group = gSty, inline = "c1")
+bodyT    = input.int(88, "Pocket transparency", minval = 0, maxval = 100, group = gSty)
+edgeWid  = input.int(1, "Border width", minval = 1, maxval = 4, group = gSty)
+showSize = input.bool(false, "Label the gap size", group = gSty)
+
+// ═════════════════════════════════════════════════════════════════════════════
+type Pocket
+    box   b
+    label l
+    float top
+    float bot
+    bool  up
+
+var array<Pocket> pockets = array.new<Pocket>()
+
+atr      = ta.atr(atrLen)
+sessOk   = not newDay or not timeframe.isintraday or session.isfirstbar_regular
+
+gapUp    = low > high[1]
+gapDn    = high < low[1]
+gapSize  = gapUp ? low - high[1] : gapDn ? low[1] - high : 0.0
+sizeOk   = close > 0 and gapSize / close * 100 >= minPct and gapSize >= atr * minAtr
+
+// ── Age the open pockets: fill them, or carry them one bar further right ─────
+if array.size(pockets) > 0
+    for i = array.size(pockets) - 1 to 0
+        p = array.get(pockets, i)
+        bool filled = false
+        if p.up
+            filled := fillMode == "Fully closed" ? low <= p.bot : low <= p.top
+        else
+            filled := fillMode == "Fully closed" ? high >= p.top : high >= p.bot
+        if filled
+            if keepFill
+                box.set_right(p.b, bar_index)
+                box.set_bgcolor(p.b, color.new(p.up ? upCol : dnCol, math.min(99, fadedT + 10)))
+                box.set_border_color(p.b, color.new(p.up ? upCol : dnCol, fadedT))
+                if not na(p.l)
+                    label.set_textcolor(p.l, color.new(p.up ? upCol : dnCol, fadedT))
+            else
+                box.delete(p.b)
+                if not na(p.l)
+                    label.delete(p.l)
+            array.remove(pockets, i)
+        else
+            box.set_right(p.b, bar_index + 1)
+            if not na(p.l)
+                label.set_x(p.l, bar_index + 1)
+
+// ── New pocket ───────────────────────────────────────────────────────────────
+if (gapUp or gapDn) and sizeOk and sessOk and bar_index > 1
+    pTop = gapUp ? low : low[1]
+    pBot = gapUp ? high[1] : high
+    pCol = gapUp ? upCol : dnCol
+    newBox = box.new(bar_index - 1, pTop, bar_index + 1, pBot, xloc = xloc.bar_index,
+         border_color = color.new(pCol, 20), border_width = edgeWid,
+         bgcolor = color.new(pCol, bodyT))
+    newLbl = showSize ? label.new(bar_index + 1, math.avg(pTop, pBot),
+         str.tostring(gapSize / close * 100, "#.##") + "%", xloc = xloc.bar_index,
+         style = label.style_none, textcolor = color.new(pCol, 20), size = size.tiny) : na
+    array.push(pockets, Pocket.new(newBox, newLbl, pTop, pBot, gapUp))
+    while array.size(pockets) > maxOpen
+        old = array.shift(pockets)
+        box.delete(old.b)
+        if not na(old.l)
+            label.delete(old.l)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(gapUp and sizeOk, "Air pocket opened up",   "Air Pocket: gap up left unfilled air below on {{ticker}}")
+alertcondition(gapDn and sizeOk, "Air pocket opened down", "Air Pocket: gap down left unfilled air above on {{ticker}}")
