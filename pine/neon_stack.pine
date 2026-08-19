@@ -6,6 +6,14 @@
 //  (strong push) and contracts as it shrinks (chop). Band colour = stack state.
 //    ★ cyan    = stack flips into bullish alignment
 //    ★ magenta = stack flips into bearish alignment
+//  ── PANE ───────────────────────────────────────────────────────────────────
+//  This is a SUB-PANE indicator (overlay = false) — it belongs in its own box
+//  under the chart, like Silver Flow. If it lands on the price pane, TradingView
+//  is reusing the pane of whatever script was previously added from that Pine
+//  Editor tab; changing a script's overlay flag never relocates an instance that
+//  is already on the chart. Fix: remove it from the chart, open a NEW editor tab,
+//  paste, then Add to chart. Or right-click the indicator title on the chart and
+//  pick "Move to → New pane below".
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Trade Daddy — Neon Stack", "Neon Stack", overlay = false)
@@ -26,7 +34,7 @@ pinchLvl = input.float(2.0, "Compression threshold", minval = 0.1, step = 0.1, g
 gSty     = "Style"
 neonCol  = input.color(#39FF14, "Neon (fast line)",  group = gSty, inline = "c1")
 stackCol = input.color(#C4C9D0, "Stack (mid line)",  group = gSty, inline = "c1")
-bearCol2 = input.color(#B9BEC6, "Bearish band",      group = gSty, inline = "c2")
+bandBear = input.color(#B9BEC6, "Bearish band",      group = gSty, inline = "c2")
 coreT    = input.int(30, "Core transparency", minval = 0, maxval = 100, group = gSty)
 bandT    = input.int(68, "Halo transparency", minval = 0, maxval = 100, group = gSty)
 coreFrac = input.float(0.45, "Core share of the band", minval = 0.1, maxval = 1.0, step = 0.05, group = gSty)
@@ -56,7 +64,7 @@ pinched  = sep < pinchLvl
 
 var bool bullState = false
 bullState := stackUp ? true : stackDn ? false : bullState
-bandCol   = bullState ? neonCol : bearCol2
+bandCol   = bullState ? neonCol : bandBear
 
 coreUp = mid + half * coreFrac
 coreDn = mid - half * coreFrac

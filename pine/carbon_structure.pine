@@ -1,11 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Trade Daddy — CARBON STRUCTURE
 //  A dynamic band drawn around price for direction, pressure, and expansion vs
-//  compression. It widens as trend strength increases, pinches as momentum fades,
-//  and flips tone when structure turns hostile to continuation. Drawn as stacked
-//  layers so the cloud reads as a gradient — brightest along the leading edge.
+//  compression. It widens as trend strength increases, pinches to a waist as
+//  momentum fades, and flips tone when structure turns hostile to continuation.
 //    Gold  = structure supports continuation higher
 //    Slate = structure supports continuation lower
+//  Price riding the upper half of a rising gold band favours continuation, and
+//  pullbacks into it are the higher-probability continuation zones.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Trade Daddy — Carbon Structure", "Carbon Structure", overlay = true)
@@ -19,24 +20,23 @@ maType   = input.string("EMA", "Baseline", options = ["EMA", "SMA", "WMA", "HMA"
 dblSm    = input.bool(true, "Double smooth (rounder band)",    group = gStr)
 widthMlt = input.float(1.0, "Band width ×", minval = 0.1, step = 0.1, group = gStr)
 atrLen   = input.int(14, "ATR length",  minval = 1,            group = gStr, inline = "a")
-atrFloor = input.float(0.35, "min half-width (ATR)", minval = 0, step = 0.05, group = gStr, inline = "a",
-     tooltip = "Keeps the cloud alive when the baselines converge, instead of collapsing to a line at every inflection.")
-
-// ── Compression ──────────────────────────────────────────────────────────────
-gCmp     = "Compression"
-sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gCmp)
-sqzPct   = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gCmp)
-dimSqz   = input.bool(true, "Fade the cloud while compressed", group = gCmp)
+atrFloor = input.float(0.15, "min half-width (ATR)", minval = 0, step = 0.05, group = gStr, inline = "a",
+     tooltip = "A small floor so the waist at each flip stays visible instead of vanishing to a line. Keep it low — a large floor turns the band into a tube.")
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
 goldCol  = input.color(#C9A227, "Gold (bullish structure)",  group = gSty, inline = "c")
 slateCol = input.color(#7C8794, "Slate (bearish structure)", group = gSty, inline = "c")
-coreT    = input.int(55, "Leading-edge transparency", minval = 0, maxval = 100, group = gSty)
-rampT    = input.int(7,  "Gradient step", minval = 0, maxval = 15, group = gSty,
-     tooltip = "Added transparency per layer as the cloud fades from its leading edge to its trailing edge.")
-edgeT    = input.int(30, "Edge line transparency", minval = 0, maxval = 100, group = gSty)
+cloudT   = input.int(62, "Cloud transparency", minval = 0, maxval = 100, group = gSty)
+edgeT    = input.int(25, "Edge transparency",  minval = 0, maxval = 100, group = gSty)
+edgeWid  = input.int(1, "Edge width", minval = 1, maxval = 4, group = gSty)
 showMid  = input.bool(false, "Show centre line", group = gSty)
+
+// ── Compression (optional) ───────────────────────────────────────────────────
+gCmp     = "Compression"
+dimSqz   = input.bool(false, "Fade the cloud while compressed", group = gCmp)
+sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gCmp)
+sqzPct   = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gCmp)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 f_ma(_src, _len, _type) =>
@@ -54,7 +54,7 @@ f_norm(_src, _len) =>
     na(rng) or rng <= 0 ? 50.0 : (_src - lo) / rng * 100.0
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  BAND
+//  BAND — the cloud is simply the space between the two baselines
 // ═════════════════════════════════════════════════════════════════════════════
 fast1    = f_ma(src, fastLen, maType)
 slow1    = f_ma(src, slowLen, maType)
@@ -64,21 +64,9 @@ slow     = dblSm ? f_ma(slow1, math.max(1, int(slowLen / 2)), maType) : slow1
 atr      = ta.atr(atrLen)
 basis    = math.avg(fast, slow)
 bullStr  = fast >= slow
-sgn      = bullStr ? 1 : -1
 half     = math.max(math.abs(fast - slow) * 0.5 * widthMlt, atr * atrFloor)
-
-//  leading edge sits on the fast side, trailing edge on the slow side
-edgeLead = basis + half * sgn
-edgeTail = basis - half * sgn
-gap      = (edgeTail - edgeLead) / 6.0
-
-l0 = edgeLead
-l1 = edgeLead + gap
-l2 = edgeLead + gap * 2
-l3 = edgeLead + gap * 3
-l4 = edgeLead + gap * 4
-l5 = edgeLead + gap * 5
-l6 = edgeTail
+upper    = basis + half
+lower    = basis - half
 
 bandW    = basis != 0 ? half * 2 / basis * 100 : 0.0
 widthRnk = f_norm(bandW, sqzLook)
@@ -86,30 +74,15 @@ squeezed = widthRnk < sqzPct
 dim      = dimSqz and squeezed ? 12 : 0
 baseCol  = bullStr ? goldCol : slateCol
 
-f_layer(_i) =>
-    color.new(baseCol, math.min(99, coreT + rampT * _i + dim))
-
-p0 = plot(l0, "Leading edge", color = color.new(baseCol, math.min(99, edgeT + dim)), linewidth = 1)
-p1 = plot(l1, "Layer 1", color = color.new(#000000, 100), editable = false)
-p2 = plot(l2, "Layer 2", color = color.new(#000000, 100), editable = false)
-p3 = plot(l3, "Layer 3", color = color.new(#000000, 100), editable = false)
-p4 = plot(l4, "Layer 4", color = color.new(#000000, 100), editable = false)
-p5 = plot(l5, "Layer 5", color = color.new(#000000, 100), editable = false)
-p6 = plot(l6, "Trailing edge", color = color.new(baseCol, math.min(99, edgeT + 25 + dim)), linewidth = 1)
-
-fill(p0, p1, color = f_layer(0), title = "Cloud 1")
-fill(p1, p2, color = f_layer(1), title = "Cloud 2")
-fill(p2, p3, color = f_layer(2), title = "Cloud 3")
-fill(p3, p4, color = f_layer(3), title = "Cloud 4")
-fill(p4, p5, color = f_layer(4), title = "Cloud 5")
-fill(p5, p6, color = f_layer(5), title = "Cloud 6")
-
+pUp = plot(upper, "Upper edge", color = color.new(baseCol, math.min(99, edgeT + dim)), linewidth = edgeWid)
+pDn = plot(lower, "Lower edge", color = color.new(baseCol, math.min(99, edgeT + dim)), linewidth = edgeWid)
+fill(pUp, pDn, color = color.new(baseCol, math.min(99, cloudT + dim)), title = "Carbon cloud")
 plot(showMid ? basis : na, "Centre", color = color.new(baseCol, 55), linewidth = 1)
 
 // ── State ────────────────────────────────────────────────────────────────────
-inBand    = close <= math.max(l0, l6) and close >= math.min(l0, l6)
-aboveBand = close > math.max(l0, l6)
-belowBand = close < math.min(l0, l6)
+inBand    = close <= upper and close >= lower
+aboveBand = close > upper
+belowBand = close < lower
 enterBand = inBand and not inBand[1]
 
 // ── Alerts ───────────────────────────────────────────────────────────────────

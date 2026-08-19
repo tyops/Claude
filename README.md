@@ -31,11 +31,13 @@ Neon Stack, Silver Flow.
 
 | What you see | Where it comes from |
 |---|---|
-| Gold/slate cloud with a gradient, brightest along its leading edge | Carbon Structure draws six stacked layers between the two baselines; transparency ramps from the fast side to the slow side |
-| Cloud pinches to a waist and flips colour | The baselines converging and crossing; the ATR floor stops it collapsing to a line |
+| Gold/slate cloud hugging price | Carbon Structure fills the space between two double-smoothed baselines — one fill, gold when fast leads, slate when it doesn't |
+| Cloud pinches to a waist and flips colour | The baselines converging and crossing; a small ATR floor keeps the waist visible |
+| Faint lines running through the cloud | Your own MA Stack showing through the transparent fill — Carbon Structure draws no inner lines |
 | Dusty-rose line running through price | Control Line, SMA 50 by default with light extra smoothing |
 | Cyan stars well below the bars, magenta well above | Gold Regime, *Star offset (ATR)* — 2.0 by default |
 | Green box with white borders around a range | Uranium Band. It keeps the green fill after the break; turn on *Recolour after a confirmed break* to tint by direction instead |
+| Cyan / magenta ★ where price leaves the box | Uranium Band break markers — stars by default, triangles available under *Break markers* |
 | White horizontal bars along the left edge | Volume Planes, anchored to the window start, brighter as the node gets bigger |
 | `1H 4H 1D 1W 1M` strip with one gold cell | Saul's Watch, a 5-column horizontal strip, gold for BULL |
 | Green ribbon with a pale halo and a white line through it | Neon Stack: bright core band, faded halo, mid line on top |
@@ -121,6 +123,21 @@ re-normalise the remaining weights instead of breaking anything.
 Runs the Gold Regime engine on five configurable timeframes via `request.security` and
 labels each BULL, BEAR, or NEUTRAL. Neutral means momentum and trend disagree on that
 timeframe — the chop warning.
+
+## If an oscillator lands on the price pane
+
+Neon Stack, Iron Momentum, Silver Flow and Vol are all `overlay = false` and belong in
+their own box under the chart. TradingView decides an indicator's pane when you *add* it
+and never moves an instance afterwards — so if you paste one of these into a Pine Editor
+tab that already has a price-pane script on the chart, the new code inherits that pane and
+the ribbon smears across price.
+
+Fix either way:
+
+- Remove it from the chart, open a **new** Pine Editor tab, paste, then *Add to chart*, or
+- Right-click the indicator's title on the chart → **Move to → New pane below**.
+
+Give each script its own editor tab and this cannot happen.
 
 ## Notes
 

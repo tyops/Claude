@@ -41,7 +41,15 @@ recolour = input.bool(false, "Recolour the band after a confirmed break", group 
 upCol    = input.color(#1B7F4B, "Broken up",   group = gSty, inline = "c3")
 dnCol    = input.color(#8E2A3B, "Broken down", group = gSty, inline = "c3")
 showMid  = input.bool(true, "Show centre line", group = gSty)
-showBrk  = input.bool(true, "Mark confirmed breaks", group = gSty)
+
+// ── Break markers ────────────────────────────────────────────────────────────
+gMark    = "Break markers"
+showBrk  = input.bool(true, "Mark confirmed breaks", group = gMark)
+useTri   = input.bool(false, "Use triangles instead of stars", group = gMark)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gMark)
+starOff  = input.float(1.2, "Star offset (ATR)", minval = 0, step = 0.1, group = gMark)
+bullCol  = input.color(#00E5FF, "Break up ★",   group = gMark, inline = "sc")
+bearCol  = input.color(#FF00E0, "Break down ★", group = gMark, inline = "sc")
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  WINDOW STATS
@@ -119,10 +127,25 @@ if not active and isBalance and not confirmUp and not confirmDn and bar_index > 
          bar_index + 1, math.avg(bandHi, bandLo),
          color = color.new(edgeCol, 35), style = line.style_dotted) : na
 
-plotshape(showBrk and confirmUp and not confirmUp[1], "Break ↑", shape.triangleup,
-     location.belowbar, upCol, size = size.tiny)
-plotshape(showBrk and confirmDn and not confirmDn[1], "Break ↓", shape.triangledown,
-     location.abovebar, dnCol, size = size.tiny)
+// ── Break markers: stars, matching the rest of the suite ─────────────────────
+brkUp    = showBrk and confirmUp and not confirmUp[1]
+brkDn    = showBrk and confirmDn and not confirmDn[1]
+bullY    = low  - atr * starOff
+bearY    = high + atr * starOff
+starOn   = not useTri
+szT      = starSz == "Tiny"
+szS      = starSz == "Small"
+szN      = starSz == "Normal"
+
+plotchar(starOn and szT and brkUp ? bullY : na, "Break ★ up (tiny)",     "★", location.absolute, bullCol, size = size.tiny)
+plotchar(starOn and szS and brkUp ? bullY : na, "Break ★ up (small)",    "★", location.absolute, bullCol, size = size.small)
+plotchar(starOn and szN and brkUp ? bullY : na, "Break ★ up (normal)",   "★", location.absolute, bullCol, size = size.normal)
+plotchar(starOn and szT and brkDn ? bearY : na, "Break ★ down (tiny)",   "★", location.absolute, bearCol, size = size.tiny)
+plotchar(starOn and szS and brkDn ? bearY : na, "Break ★ down (small)",  "★", location.absolute, bearCol, size = size.small)
+plotchar(starOn and szN and brkDn ? bearY : na, "Break ★ down (normal)", "★", location.absolute, bearCol, size = size.normal)
+
+plotshape(useTri and brkUp, "Break ▲", shape.triangleup,   location.belowbar, bullCol, size = size.tiny)
+plotshape(useTri and brkDn, "Break ▼", shape.triangledown, location.abovebar, bearCol, size = size.tiny)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(confirmUp and not confirmUp[1], "Uranium break up",   "Uranium Band: confirmed break UP on {{ticker}}")

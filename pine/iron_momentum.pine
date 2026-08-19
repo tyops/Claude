@@ -6,6 +6,14 @@
 //    ★ cyan    = momentum flips into bullish control
 //    ★ magenta = momentum flips into bearish control
 //  Best flips: band tight, then expanding. Worst: band already wide and fading.
+//  ── PANE ───────────────────────────────────────────────────────────────────
+//  This is a SUB-PANE indicator (overlay = false) — it belongs in its own box
+//  under the chart, like Silver Flow. If it lands on the price pane, TradingView
+//  is reusing the pane of whatever script was previously added from that Pine
+//  Editor tab; changing a script's overlay flag never relocates an instance that
+//  is already on the chart. Fix: remove it from the chart, open a NEW editor tab,
+//  paste, then Add to chart. Or right-click the indicator title on the chart and
+//  pick "Move to → New pane below".
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Trade Daddy — Iron Momentum", "Iron Momentum", overlay = false)
