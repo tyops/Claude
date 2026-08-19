@@ -24,12 +24,12 @@ indicator("Trade Daddy — Uranium Band", "Uranium Band", overlay = true,
 // ── Balance detection ────────────────────────────────────────────────────────
 gBal     = "Balance detection"
 winLen   = input.int(20, "Balance window (bars)", minval = 3, group = gBal)
-persist  = input.int(5, "Bars balance must hold first", minval = 1, group = gBal,
+persist  = input.int(8, "Bars balance must hold first", minval = 1, group = gBal,
      tooltip = "The window has to stay in balance this many bars in a row before the zone is drawn. This is the main control for how many zones you get — raise it if the chart is busy, lower it if it misses one.")
 minRange = input.float(3.0,  "Min window range %", minval = 0.1, step = 0.1, group = gBal,
      tooltip = "Movement floor — the window has to actually travel to count as balance rather than a dead tape.")
-maxRange = input.float(20.0, "Max window range %", minval = 0.5, step = 0.5, group = gBal,
-     tooltip = "Movement ceiling — above this the window is a trend leg, not balance.")
+maxRange = input.float(15.0, "Max window range %", minval = 0.5, step = 0.5, group = gBal,
+     tooltip = "Movement ceiling — above this the window is a trend leg, not balance. A real consolidation on a liquid daily chart runs about 8-12 percent, so 15 keeps the tall ranges out.")
 minTaps  = input.int(5, "Min centre crossings", minval = 1, group = gBal,
      tooltip = "How many times price has to cross the window's midpoint before it counts as chopping around a centre.")
 atrLen   = input.int(14, "ATR length", minval = 1, group = gBal)
@@ -40,9 +40,9 @@ trackHL  = input.bool(true, "Rails track the zone's true high and low", group = 
 
 // ── Spacing ──────────────────────────────────────────────────────────────────
 gSpc     = "Spacing"
-cooldown = input.int(20, "Cooldown bars after a zone ends", minval = 0, group = gSpc,
+cooldown = input.int(30, "Cooldown bars after a zone ends", minval = 0, group = gSpc,
      tooltip = "Stops a fresh zone forming the moment the last one breaks.")
-maxOver  = input.float(40, "Max overlap with the last zone %", minval = 0, maxval = 100, step = 5, group = gSpc,
+maxOver  = input.float(30, "Max overlap with the last zone %", minval = 0, maxval = 100, step = 5, group = gSpc,
      tooltip = "A new zone has to cover genuinely different prices than the one before it. Lower = stricter.")
 keepOld  = input.int(25, "Historical zones kept", minval = 0, maxval = 150, group = gSpc,
      tooltip = "Older zones are deleted past this count.")
