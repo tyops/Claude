@@ -80,12 +80,12 @@ szT      = starSz == "Tiny"
 szS      = starSz == "Small"
 szN      = starSz == "Normal"
 
-plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny)
-plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small)
-plotchar(showStar and szN and bullStar ? starY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal)
-plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny)
-plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small)
-plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal)
+plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny, display = display.pane)
+plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small, display = display.pane)
+plotchar(showStar and szN and bullStar ? starY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal, display = display.pane)
+plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny, display = display.pane)
+plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small, display = display.pane)
+plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal, display = display.pane)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(bullStar, "Iron — bullish control", "Iron Momentum: buyers took control on {{ticker}}")

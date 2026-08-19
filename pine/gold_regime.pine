@@ -105,15 +105,15 @@ szS       = starSz == "Small"
 szN       = starSz == "Normal"
 starOn    = showStar and not showTri
 
-plotchar(starOn and szT and bullTrig ? bullY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny)
-plotchar(starOn and szS and bullTrig ? bullY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small)
-plotchar(starOn and szN and bullTrig ? bullY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal)
-plotchar(starOn and szT and bearTrig ? bearY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny)
-plotchar(starOn and szS and bearTrig ? bearY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small)
-plotchar(starOn and szN and bearTrig ? bearY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal)
+plotchar(starOn and szT and bullTrig ? bullY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny, display = display.pane)
+plotchar(starOn and szS and bullTrig ? bullY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small, display = display.pane)
+plotchar(starOn and szN and bullTrig ? bullY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal, display = display.pane)
+plotchar(starOn and szT and bearTrig ? bearY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny, display = display.pane)
+plotchar(starOn and szS and bearTrig ? bearY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small, display = display.pane)
+plotchar(starOn and szN and bearTrig ? bearY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal, display = display.pane)
 
-plotshape(showStar and showTri and bullTrig, "Bull ▲", shape.triangleup,   location.belowbar, bullCol, size = size.tiny)
-plotshape(showStar and showTri and bearTrig, "Bear ▼", shape.triangledown, location.abovebar, bearCol, size = size.tiny)
+plotshape(showStar and showTri and bullTrig, "Bull ▲", shape.triangleup,   location.belowbar, bullCol, size = size.tiny, display = display.pane)
+plotshape(showStar and showTri and bearTrig, "Bear ▼", shape.triangledown, location.abovebar, bearCol, size = size.tiny, display = display.pane)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(bullTrig, "Gold Regime — bull trigger", "Gold Regime: BULL trigger on {{ticker}} @ {{close}}")
