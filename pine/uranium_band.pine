@@ -35,7 +35,8 @@ gSty     = "Style"
 edgeCol  = input.color(#FFFFFF, "Band edges",   group = gSty, inline = "c1")
 edgeWid  = input.int(1, "Width", minval = 1, maxval = 4, group = gSty, inline = "c1")
 liveCol  = input.color(#14532D, "Band fill",   group = gSty, inline = "c2")
-fillT    = input.int(80, "Fill transparency", minval = 0, maxval = 100, group = gSty)
+fillT    = input.int(100, "Fill transparency", minval = 0, maxval = 100, group = gSty,
+     tooltip = "100 leaves the box as an outline only, which is how it should read. Drop it if you ever want the range shaded.")
 recolour = input.bool(false, "Recolour the band after a confirmed break", group = gSty,
      tooltip = "Off matches the reference charts — the band keeps its green fill whichever way price leaves it.")
 upCol    = input.color(#1B7F4B, "Broken up",   group = gSty, inline = "c3")
