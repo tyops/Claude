@@ -25,11 +25,11 @@ showPoc  = input.bool(true, "Extend POC across the chart", group = gVA)
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
-planeCol = input.color(#D6DAE0, "Plane",      group = gSty, inline = "c")
+planeCol = input.color(#FFFFFF, "Plane",      group = gSty, inline = "c")
 vaCol    = input.color(#FFFFFF, "Value area", group = gSty, inline = "c")
 pocCol   = input.color(#FFFFFF, "POC",        group = gSty, inline = "c")
-planeT   = input.int(82, "Smallest plane transparency", minval = 0, maxval = 100, group = gSty)
-planeTHi = input.int(42, "Largest plane transparency",  minval = 0, maxval = 100, group = gSty)
+planeT   = input.int(70, "Smallest plane transparency", minval = 0, maxval = 100, group = gSty)
+planeTHi = input.int(25, "Largest plane transparency",  minval = 0, maxval = 100, group = gSty)
 vaT      = input.int(35, "Value area transparency", minval = 0, maxval = 100, group = gSty)
 binGap   = input.float(20, "Gap between planes %", minval = 0, maxval = 60, step = 5, group = gSty)
 

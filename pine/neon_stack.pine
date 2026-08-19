@@ -35,15 +35,16 @@ gSty     = "Style"
 neonCol  = input.color(#39FF14, "Neon (fast line)",  group = gSty, inline = "c1")
 stackCol = input.color(#C4C9D0, "Stack (mid line)",  group = gSty, inline = "c1")
 bandBear = input.color(#B9BEC6, "Bearish band",      group = gSty, inline = "c2")
-coreT    = input.int(30, "Core transparency", minval = 0, maxval = 100, group = gSty)
-bandT    = input.int(68, "Halo transparency", minval = 0, maxval = 100, group = gSty)
+coreT    = input.int(22, "Core transparency", minval = 0, maxval = 100, group = gSty)
+bandT    = input.int(60, "Halo transparency", minval = 0, maxval = 100, group = gSty)
 coreFrac = input.float(0.45, "Core share of the band", minval = 0.1, maxval = 1.0, step = 0.05, group = gSty)
-showLvls = input.bool(true, "Show 30 / 50 / 70 levels", group = gSty)
+showLvls = input.bool(false, "Show 30 / 50 / 70 levels", group = gSty,
+     tooltip = "Off matches the reference charts, which carry no level lines of their own — the faint lines you see there are the pane's own gridlines.")
 
 // ── Stars ────────────────────────────────────────────────────────────────────
 gStar    = "Stars"
 showStar = input.bool(true, "Show stars",             group = gStar)
-starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starSz   = input.string("Small", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
 starGap  = input.float(8.0, "Star gap below the band", minval = 0, step = 0.5, group = gStar)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")

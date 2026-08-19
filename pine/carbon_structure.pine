@@ -27,8 +27,8 @@ atrFloor = input.float(0.15, "min half-width (ATR)", minval = 0, step = 0.05, gr
 gSty     = "Style"
 goldCol  = input.color(#C9A227, "Gold (bullish structure)",  group = gSty, inline = "c")
 slateCol = input.color(#7C8794, "Slate (bearish structure)", group = gSty, inline = "c")
-cloudT   = input.int(62, "Cloud transparency", minval = 0, maxval = 100, group = gSty)
-edgeT    = input.int(25, "Edge transparency",  minval = 0, maxval = 100, group = gSty)
+cloudT   = input.int(30, "Cloud transparency", minval = 0, maxval = 100, group = gSty)
+edgeT    = input.int(15, "Edge transparency",  minval = 0, maxval = 100, group = gSty)
 edgeWid  = input.int(1, "Edge width", minval = 1, maxval = 4, group = gSty)
 showMid  = input.bool(false, "Show centre line", group = gSty)
 

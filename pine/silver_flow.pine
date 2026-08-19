@@ -43,16 +43,17 @@ gSty     = "Style"
 goldCol  = input.color(#C9A227, "Whale (gold)",     group = gSty, inline = "c")
 whiteCol = input.color(#FFFFFF, "Reactive (white)", group = gSty, inline = "c")
 zoneGold = input.color(#C9A227, "Zone — whales in control", group = gSty, inline = "z1")
-zoneGT   = input.int(74, "T", minval = 0, maxval = 100, group = gSty, inline = "z1")
+zoneGT   = input.int(62, "T", minval = 0, maxval = 100, group = gSty, inline = "z1")
 zoneDark = input.color(#161A20, "Zone — hot money in control", group = gSty, inline = "z2")
 zoneDT   = input.int(45, "T", minval = 0, maxval = 100, group = gSty, inline = "z2")
 toneStep = input.int(12, "Fade when control is slipping", minval = 0, maxval = 40, group = gSty)
-showLvls = input.bool(true, "Show 50 level", group = gSty)
+showLvls = input.bool(false, "Show 50 level", group = gSty,
+     tooltip = "Off matches the reference charts — the horizontal lines visible there are the pane's own gridlines, not a plot.")
 
 // ── Stars ────────────────────────────────────────────────────────────────────
 gStar    = "Stars"
 showStar = input.bool(true, "Show stars", group = gStar)
-starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starSz   = input.string("Small", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
 

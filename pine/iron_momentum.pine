@@ -36,13 +36,13 @@ sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gMom)
 gSty     = "Style"
 goldCol  = input.color(#C9A227, "Buyers in control",  group = gSty, inline = "c")
 ironCol  = input.color(#7C8794, "Sellers in control", group = gSty, inline = "c")
-bandT    = input.int(45, "Band transparency", minval = 0, maxval = 100, group = gSty)
+bandT    = input.int(30, "Band transparency", minval = 0, maxval = 100, group = gSty)
 showBase = input.bool(true, "Show baseline", group = gSty)
 
 // ── Stars ────────────────────────────────────────────────────────────────────
 gStar    = "Stars"
 showStar = input.bool(true, "Show stars", group = gStar)
-starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starSz   = input.string("Small", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
 starGap  = input.float(0.6, "Star gap below the band (× half-width)", minval = 0, step = 0.1, group = gStar)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")

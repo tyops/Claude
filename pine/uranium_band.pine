@@ -64,7 +64,8 @@ edgeWid  = input.int(2, "Width", minval = 1, maxval = 4, group = gSty, inline = 
 fillCol  = input.color(#0E3020, "Panel",  group = gSty, inline = "c2")
 fillT    = input.int(0, "Transparency", minval = 0, maxval = 100, group = gSty, inline = "c2",
      tooltip = "0 is solid, which is how it should look — the panel sits behind the candles, so it fills in as a background block rather than shading price.")
-showMid  = input.bool(false, "Show centre line", group = gSty)
+showMid  = input.bool(true, "Show centre line", group = gSty,
+     tooltip = "The dashed mean-value line through the middle of the zone, as on the reference charts.")
 recolour = input.bool(false, "Recolour the rails after a confirmed break", group = gSty,
      tooltip = "Off matches the reference charts — the rails stay white whichever way price leaves them.")
 upCol    = input.color(#1B7F4B, "Broken up",   group = gSty, inline = "c3")
@@ -213,7 +214,7 @@ if not active and isBalance and roomForIt and not confirmUp and not confirmDn an
          color = edgeCol, width = edgeWid, style = line.style_solid)
     railMid := showMid ? line.new(left, math.avg(bandHi, bandLo), bar_index + 1,
          math.avg(bandHi, bandLo), xloc = xloc.bar_index,
-         color = color.new(edgeCol, 35), style = line.style_dotted) : na
+         color = color.new(edgeCol, 25), style = line.style_dashed) : na
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(confirmUp and not confirmUp[1], "Uranium break up",   "Uranium Band: confirmed break UP on {{ticker}}")
