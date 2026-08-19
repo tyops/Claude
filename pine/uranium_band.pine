@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Trade Daddy — URANIUM BAND
 //  Hunts for balance zones: price chopping around a centre point with enough
-//  movement to matter. When the conditions line up it prints a horizontal band
-//  from the window's high and low (plus an optional centre line), extends it
+//  movement to matter. When the conditions line up it prints the window's high
+//  and low as two horizontal rails (plus an optional centre line), extends them
 //  forward while price stays in balance, and stops only after a confirmed break.
-//    Inside the band  = chop. Fade the edges, smaller size, quicker profits.
+//    Inside the rails = chop. Fade the edges, smaller size, quicker profits.
 //    Confirmed break  = N closes outside; price tends to surge that way after.
+//    ★ cyan / magenta = the bar the break is confirmed
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Trade Daddy — Uranium Band", "Uranium Band", overlay = true,
-     max_boxes_count = 200, max_lines_count = 200)
+     max_lines_count = 500)
 
 // ── Balance detection ────────────────────────────────────────────────────────
 gBal     = "Balance detection"
@@ -29,19 +30,18 @@ gBrk     = "Break confirmation"
 brkBars  = input.int(2, "Closes outside required", minval = 1, group = gBrk)
 brkBuf   = input.float(0.0, "Break buffer % of band", minval = 0, step = 0.1, group = gBrk)
 keepOld  = input.int(6, "Historical bands kept", minval = 0, maxval = 50, group = gBrk)
+extAfter = input.bool(false, "Keep projecting the rails after a break", group = gBrk,
+     tooltip = "Off follows the rules — the rails stop where the break was confirmed. On leaves them running to the right as reference levels.")
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
-edgeCol  = input.color(#FFFFFF, "Band edges",   group = gSty, inline = "c1")
-edgeWid  = input.int(1, "Width", minval = 1, maxval = 4, group = gSty, inline = "c1")
-liveCol  = input.color(#14532D, "Band fill",   group = gSty, inline = "c2")
-fillT    = input.int(100, "Fill transparency", minval = 0, maxval = 100, group = gSty,
-     tooltip = "100 leaves the box as an outline only, which is how it should read. Drop it if you ever want the range shaded.")
-recolour = input.bool(false, "Recolour the band after a confirmed break", group = gSty,
-     tooltip = "Off matches the reference charts — the band keeps its green fill whichever way price leaves it.")
+edgeCol  = input.color(#FFFFFF, "Rails",  group = gSty, inline = "c1")
+edgeWid  = input.int(2, "Width", minval = 1, maxval = 4, group = gSty, inline = "c1")
+showMid  = input.bool(false, "Show centre line", group = gSty)
+recolour = input.bool(false, "Recolour the rails after a confirmed break", group = gSty,
+     tooltip = "Off matches the reference charts — the rails stay white whichever way price leaves them.")
 upCol    = input.color(#1B7F4B, "Broken up",   group = gSty, inline = "c3")
 dnCol    = input.color(#8E2A3B, "Broken down", group = gSty, inline = "c3")
-showMid  = input.bool(true, "Show centre line", group = gSty)
 
 // ── Break markers ────────────────────────────────────────────────────────────
 gMark    = "Break markers"
@@ -71,27 +71,25 @@ taps      = math.sum(crossUp ? 1 : 0, winLen) + math.sum(crossDn ? 1 : 0, winLen
 isBalance = rangePct >= minRange and rangePct <= maxRange and taps >= minTaps and atrOk
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  BAND STATE MACHINE
+//  RAIL STATE MACHINE — two horizontal lines, never a box
 // ═════════════════════════════════════════════════════════════════════════════
-var box   curBox   = na
-var line  curMid   = na
-var float bandHi   = na
-var float bandLo   = na
-var bool  active   = false
-var int   outUp    = 0
-var int   outDn    = 0
-var array<box>  oldBoxes = array.new<box>()
-var array<line> oldMids  = array.new<line>()
+var line  railTop = na
+var line  railBot = na
+var line  railMid = na
+var float bandHi  = na
+var float bandLo  = na
+var bool  active  = false
+var int   outUp   = 0
+var int   outDn   = 0
+var array<line> oldRails = array.new<line>()
 
-f_retire(_b, _l) =>
-    if not na(_b)
-        array.push(oldBoxes, _b)
+f_park(_l) =>
     if not na(_l)
-        array.push(oldMids, _l)
-    while array.size(oldBoxes) > keepOld
-        box.delete(array.shift(oldBoxes))
-    while array.size(oldMids) > keepOld
-        line.delete(array.shift(oldMids))
+        array.push(oldRails, _l)
+
+f_trim() =>
+    while array.size(oldRails) > keepOld * 3
+        line.delete(array.shift(oldRails))
 
 buf       = na(bandHi) ? 0.0 : (bandHi - bandLo) * brkBuf / 100.0
 brokeUp   = active and close > bandHi + buf
@@ -103,29 +101,43 @@ confirmDn = active and outDn >= brkBars
 
 if active
     if confirmUp or confirmDn
-        // freeze the band where the break was confirmed and colour the result
+        // the rails stop where the break was confirmed
         if recolour
-            box.set_bgcolor(curBox, color.new(confirmUp ? upCol : dnCol, fillT))
-        f_retire(curBox, curMid)
-        curBox := na
-        curMid := na
-        active := false
-        outUp  := 0
-        outDn  := 0
+            brkCol = confirmUp ? upCol : dnCol
+            line.set_color(railTop, brkCol)
+            line.set_color(railBot, brkCol)
+            if not na(railMid)
+                line.set_color(railMid, color.new(brkCol, 35))
+        if extAfter
+            line.set_extend(railTop, extend.right)
+            line.set_extend(railBot, extend.right)
+        f_park(railTop)
+        f_park(railBot)
+        f_park(railMid)
+        f_trim()
+        railTop := na
+        railBot := na
+        railMid := na
+        active  := false
+        outUp   := 0
+        outDn   := 0
     else
-        box.set_right(curBox, bar_index + 1)
-        if not na(curMid)
-            line.set_x2(curMid, bar_index + 1)
+        line.set_x2(railTop, bar_index + 1)
+        line.set_x2(railBot, bar_index + 1)
+        if not na(railMid)
+            line.set_x2(railMid, bar_index + 1)
 
 if not active and isBalance and not confirmUp and not confirmDn and bar_index > winLen
-    bandHi := winHi
-    bandLo := winLo
-    active := true
-    curBox := box.new(bar_index - winLen + 1, bandHi, bar_index + 1, bandLo,
-         border_color = edgeCol, border_width = edgeWid,
-         bgcolor = color.new(liveCol, fillT))
-    curMid := showMid ? line.new(bar_index - winLen + 1, math.avg(bandHi, bandLo),
-         bar_index + 1, math.avg(bandHi, bandLo),
+    bandHi  := winHi
+    bandLo  := winLo
+    active  := true
+    left     = bar_index - winLen + 1
+    railTop := line.new(left, bandHi, bar_index + 1, bandHi, xloc = xloc.bar_index,
+         color = edgeCol, width = edgeWid, style = line.style_solid)
+    railBot := line.new(left, bandLo, bar_index + 1, bandLo, xloc = xloc.bar_index,
+         color = edgeCol, width = edgeWid, style = line.style_solid)
+    railMid := showMid ? line.new(left, math.avg(bandHi, bandLo), bar_index + 1,
+         math.avg(bandHi, bandLo), xloc = xloc.bar_index,
          color = color.new(edgeCol, 35), style = line.style_dotted) : na
 
 // ── Break markers: stars, matching the rest of the suite ─────────────────────

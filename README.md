@@ -7,7 +7,7 @@ in the indicator book and the reference charts.
 |------|------|-------|------------|
 | `pine/gold_regime.pine` | overlay | ✅ | Flagship regime filter + trigger system. Recolours candles, fires bull/bear triggers |
 | `pine/carbon_structure.pine` | overlay | — | Dynamic band around price: direction, pressure, expansion vs compression |
-| `pine/uranium_band.pine` | overlay | — | Balance-zone hunter: green box from the window high/low, extends while in balance, stops on a confirmed break |
+| `pine/uranium_band.pine` | overlay | — | Balance-zone hunter: two horizontal rails at the window high/low, extend while in balance, stop on a confirmed break |
 | `pine/control_line.pine` | overlay | — | The dusty-rose baseline. Above it favours buyers, below favours sellers |
 | `pine/volume_planes.pine` | overlay | — | Horizontal volume profile — high volume nodes, value area, POC |
 | `pine/neon_stack.pine` | sub-pane | ✅ | Momentum alignment meter — three speed layers as a stack, banded |
@@ -36,7 +36,7 @@ Neon Stack, Silver Flow.
 | Faint lines running through the cloud | Your own MA Stack showing through the transparent fill — Carbon Structure draws no inner lines |
 | Dusty-rose line running through price | Control Line, SMA 50 by default with light extra smoothing |
 | Cyan stars well below the bars, magenta well above | Gold Regime, *Star offset (ATR)* — 2.0 by default |
-| Green box with white borders around a range | Uranium Band. It keeps the green fill after the break; turn on *Recolour after a confirmed break* to tint by direction instead |
+| Two white rails around a range, top and bottom | Uranium Band. Horizontal lines only, no box and no shading; they extend while price stays in balance and stop at the confirmed break |
 | Cyan / magenta ★ where price leaves the box | Uranium Band break markers — stars by default, triangles available under *Break markers* |
 | White horizontal bars along the left edge | Volume Planes, anchored to the window start, brighter as the node gets bigger |
 | `1H 4H 1D 1W 1M` strip with one gold cell | Saul's Watch, a 5-column horizontal strip, gold for BULL |
@@ -86,10 +86,10 @@ rounded shape in the reference charts.
 ### Uranium Band
 Balance is declared when the window's range sits between the min and max range percentages,
 price has crossed the window's midpoint at least *N* times, and the average bar range is a
-real fraction of the band height (filters dead tape). The band then extends bar by bar. A
-break needs *N* consecutive closes outside — optionally past a buffer — and on confirmation
-the band freezes and recolours green (up) or red (down). Old bands are kept up to the limit
-you set, then deleted.
+real fraction of the band height (filters dead tape). Two horizontal rails are drawn at the
+window's high and low — no box, no fill — and they extend bar by bar while balance holds. A
+break needs *N* consecutive closes outside, optionally past a buffer, and on confirmation
+the rails stop and a star prints. Old bands are kept up to the limit you set, then deleted.
 
 ### Volume Planes
 Bins the lookback window by price, spreads each bar's volume across the bins its range
