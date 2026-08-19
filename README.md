@@ -7,12 +7,13 @@ in the indicator book and the reference charts.
 |------|------|-------|------------|
 | `pine/gold_regime.pine` | overlay | ✅ | Flagship regime filter + trigger system. Recolours candles, fires bull/bear triggers |
 | `pine/carbon_structure.pine` | overlay | — | Dynamic band around price: direction, pressure, expansion vs compression |
-| `pine/uranium_band.pine` | overlay | — | Balance-zone hunter: horizontal band, extends while in balance, stops on a confirmed break |
+| `pine/uranium_band.pine` | overlay | — | Balance-zone hunter: green box from the window high/low, extends while in balance, stops on a confirmed break |
+| `pine/control_line.pine` | overlay | — | The dusty-rose baseline. Above it favours buyers, below favours sellers |
 | `pine/volume_planes.pine` | overlay | — | Horizontal volume profile — high volume nodes, value area, POC |
 | `pine/neon_stack.pine` | sub-pane | ✅ | Momentum alignment meter — three speed layers as a stack, banded |
 | `pine/iron_momentum.pine` | sub-pane | ✅ | Fast momentum vs its baseline, gold = buyers control, gray = sellers |
 | `pine/silver_flow.pine` | sub-pane | ✅ | Whale flow (gold) vs reactive money (white), 0-100 with a control zone |
-| `pine/sauls_watch.pine` | overlay | — | Multi-timeframe BULL / BEAR / NEUTRAL table from the Gold Regime engine |
+| `pine/sauls_watch.pine` | overlay | — | Multi-timeframe BULL / BEAR / NEUTRAL strip from the Gold Regime engine |
 | `pine/regime_volume.pine` | sub-pane | — | The `Vol` pane in the suite palette |
 
 MA Stack is not included — you already have it.
@@ -22,8 +23,25 @@ MA Stack is not included — you already have it.
 Pine Editor → *Open* → *New indicator* → paste one file → **Save** → **Add to chart**.
 Repeat per file. Overlay scripts land on price; the rest open their own pane.
 
-Reference layout, top to bottom: price (Gold Regime + Carbon Structure + Uranium Band +
-Volume Planes + your MA Stack), Vol, Iron Momentum, Neon Stack, Silver Flow.
+Reference layout, top to bottom: price (Gold Regime + Carbon Structure + Control Line +
+Uranium Band + Volume Planes + Saul's Watch + your MA Stack), Vol, Iron Momentum,
+Neon Stack, Silver Flow.
+
+## Matching the reference charts
+
+| What you see | Where it comes from |
+|---|---|
+| Gold/slate cloud with a gradient, brightest along its leading edge | Carbon Structure draws six stacked layers between the two baselines; transparency ramps from the fast side to the slow side |
+| Cloud pinches to a waist and flips colour | The baselines converging and crossing; the ATR floor stops it collapsing to a line |
+| Dusty-rose line running through price | Control Line, SMA 50 by default with light extra smoothing |
+| Cyan stars well below the bars, magenta well above | Gold Regime, *Star offset (ATR)* — 2.0 by default |
+| Green box with white borders around a range | Uranium Band. It keeps the green fill after the break; turn on *Recolour after a confirmed break* to tint by direction instead |
+| White horizontal bars along the left edge | Volume Planes, anchored to the window start, brighter as the node gets bigger |
+| `1H 4H 1D 1W 1M` strip with one gold cell | Saul's Watch, a 5-column horizontal strip, gold for BULL |
+| Green ribbon with a pale halo and a white line through it | Neon Stack: bright core band, faded halo, mid line on top |
+| Gold/slate blob breathing around zero | Iron Momentum: baseline ± the gap to the fast line, coloured by who has control |
+| Gold zone under the gold line, near-black when white leads | Silver Flow's control zone, which also fades a step when control is slipping |
+| Stars sitting just under each oscillator ribbon | The band pinches at every flip, so a fixed gap under the lower edge lands them in a neat row |
 
 ## How the stars work
 

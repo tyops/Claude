@@ -19,7 +19,7 @@ minShare = input.float(2.0, "Hide planes under % of the peak", minval = 0, maxva
 
 // ── Value area / POC ─────────────────────────────────────────────────────────
 gVA      = "Value area"
-showVA   = input.bool(true, "Highlight value area", group = gVA)
+showVA   = input.bool(false, "Highlight value area", group = gVA)
 vaPct    = input.float(70, "Value area %", minval = 10, maxval = 100, step = 5, group = gVA)
 showPoc  = input.bool(true, "Extend POC across the chart", group = gVA)
 
@@ -28,8 +28,9 @@ gSty     = "Style"
 planeCol = input.color(#D6DAE0, "Plane",      group = gSty, inline = "c")
 vaCol    = input.color(#FFFFFF, "Value area", group = gSty, inline = "c")
 pocCol   = input.color(#FFFFFF, "POC",        group = gSty, inline = "c")
-planeT   = input.int(72, "Plane transparency", minval = 0, maxval = 100, group = gSty)
-vaT      = input.int(58, "Value area transparency", minval = 0, maxval = 100, group = gSty)
+planeT   = input.int(82, "Smallest plane transparency", minval = 0, maxval = 100, group = gSty)
+planeTHi = input.int(42, "Largest plane transparency",  minval = 0, maxval = 100, group = gSty)
+vaT      = input.int(35, "Value area transparency", minval = 0, maxval = 100, group = gSty)
 binGap   = input.float(20, "Gap between planes %", minval = 0, maxval = 60, step = 5, group = gSty)
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -90,9 +91,12 @@ if barstate.islast and bar_index > lookback
                 bot   = vpLo + b * binSize
                 top   = bot + binSize
                 pad   = binSize * binGap / 200.0
+                //  bigger node, brighter plane
+                rel   = v / maxV
+                trans = math.max(0, math.min(100, int(planeT - (planeT - planeTHi) * rel)))
                 array.push(planes, box.new(left, top - pad, left + len, bot + pad,
                      border_width = 0,
-                     bgcolor = color.new(inVA ? vaCol : planeCol, inVA ? vaT : planeT)))
+                     bgcolor = color.new(inVA ? vaCol : planeCol, inVA ? vaT : trans)))
 
         if showPoc
             pocPrice = vpLo + (pocId + 0.5) * binSize

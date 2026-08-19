@@ -42,7 +42,10 @@ mcSlowL  = input.int(39, "slow EMA",           minval = 1, group = gInt, inline 
 gSty     = "Style"
 goldCol  = input.color(#C9A227, "Whale (gold)",     group = gSty, inline = "c")
 whiteCol = input.color(#FFFFFF, "Reactive (white)", group = gSty, inline = "c")
-zoneT    = input.int(78, "Control zone transparency", minval = 0, maxval = 100, group = gSty)
+zoneGold = input.color(#C9A227, "Zone — whales in control", group = gSty, inline = "z1")
+zoneGT   = input.int(74, "T", minval = 0, maxval = 100, group = gSty, inline = "z1")
+zoneDark = input.color(#161A20, "Zone — hot money in control", group = gSty, inline = "z2")
+zoneDT   = input.int(45, "T", minval = 0, maxval = 100, group = gSty, inline = "z2")
 toneStep = input.int(12, "Fade when control is slipping", minval = 0, maxval = 40, group = gSty)
 showLvls = input.bool(true, "Show 50 level", group = gSty)
 
@@ -106,8 +109,9 @@ reactLine  = ta.ema(mfi, reactSm)
 
 whaleCtrl  = whaleLine > reactLine
 gaining    = whaleLine > whaleLine[1]
-zoneCol    = color.new(whaleCtrl ? goldCol : whiteCol,
-     math.min(99, zoneT + (whaleCtrl == gaining ? 0 : toneStep)))
+slipping   = whaleCtrl != gaining          // control leaking away from whoever holds it
+fade       = slipping ? toneStep : 0
+zoneCol    = whaleCtrl ? color.new(zoneGold, math.min(99, zoneGT + fade)) : color.new(zoneDark, math.min(99, zoneDT + fade))
 
 pWhale = plot(whaleLine, "Whale flow",    color = goldCol,  linewidth = 2)
 pReact = plot(reactLine, "Reactive flow", color = whiteCol, linewidth = 2)

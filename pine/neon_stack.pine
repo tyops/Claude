@@ -26,8 +26,10 @@ pinchLvl = input.float(2.0, "Compression threshold", minval = 0.1, step = 0.1, g
 gSty     = "Style"
 neonCol  = input.color(#39FF14, "Neon (fast line)",  group = gSty, inline = "c1")
 stackCol = input.color(#C4C9D0, "Stack (mid line)",  group = gSty, inline = "c1")
-bearCol2 = input.color(#8E97A3, "Bearish band",      group = gSty, inline = "c2")
-bandT    = input.int(55, "Band transparency", minval = 0, maxval = 100, group = gSty)
+bearCol2 = input.color(#B9BEC6, "Bearish band",      group = gSty, inline = "c2")
+coreT    = input.int(30, "Core transparency", minval = 0, maxval = 100, group = gSty)
+bandT    = input.int(68, "Halo transparency", minval = 0, maxval = 100, group = gSty)
+coreFrac = input.float(0.45, "Core share of the band", minval = 0.1, maxval = 1.0, step = 0.05, group = gSty)
 showLvls = input.bool(true, "Show 30 / 50 / 70 levels", group = gSty)
 
 // ── Stars ────────────────────────────────────────────────────────────────────
@@ -56,9 +58,17 @@ var bool bullState = false
 bullState := stackUp ? true : stackDn ? false : bullState
 bandCol   = bullState ? neonCol : bearCol2
 
-pUp = plot(upper, "Band upper", color = color.new(bandCol, math.min(99, bandT + 25)), linewidth = 1)
-pDn = plot(lower, "Band lower", color = color.new(bandCol, math.min(99, bandT + 25)), linewidth = 1)
-fill(pUp, pDn, color = color.new(bandCol, pinched ? math.min(99, bandT + 20) : bandT), title = "Stack band")
+coreUp = mid + half * coreFrac
+coreDn = mid - half * coreFrac
+dim    = pinched ? 12 : 0
+
+pUp   = plot(upper,  "Halo upper", color = color.new(bandCol, math.min(99, bandT + 20 + dim)), linewidth = 1)
+pDn   = plot(lower,  "Halo lower", color = color.new(bandCol, math.min(99, bandT + 20 + dim)), linewidth = 1)
+pCUp  = plot(coreUp, "Core upper", color = color.new(#000000, 100), editable = false)
+pCDn  = plot(coreDn, "Core lower", color = color.new(#000000, 100), editable = false)
+fill(pUp,  pCUp, color = color.new(bandCol, math.min(99, bandT + dim)), title = "Halo top")
+fill(pCDn, pDn,  color = color.new(bandCol, math.min(99, bandT + dim)), title = "Halo bottom")
+fill(pCUp, pCDn, color = color.new(bandCol, math.min(99, coreT + dim)), title = "Core band")
 
 plot(mid,  "Stack line", color = color.new(stackCol, 0), linewidth = 2)
 plot(fast, "Neon line",  color = neonCol, linewidth = 2)

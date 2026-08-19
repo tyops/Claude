@@ -13,12 +13,12 @@ indicator("Trade Daddy — Uranium Band", "Uranium Band", overlay = true,
 
 // ── Balance detection ────────────────────────────────────────────────────────
 gBal     = "Balance detection"
-winLen   = input.int(20, "Balance window (bars)", minval = 3, group = gBal)
+winLen   = input.int(10, "Balance window (bars)", minval = 3, group = gBal)
 minRange = input.float(3.0,  "Min window range %", minval = 0.1, step = 0.1, group = gBal,
      tooltip = "Movement floor — the window has to actually travel to count as balance rather than a dead tape.")
 maxRange = input.float(25.0, "Max window range %", minval = 0.5, step = 0.5, group = gBal,
      tooltip = "Movement ceiling — above this the window is a trend leg, not balance.")
-minTaps  = input.int(4, "Min centre crossings", minval = 1, group = gBal,
+minTaps  = input.int(3, "Min centre crossings", minval = 1, group = gBal,
      tooltip = "How many times price has to cross the window's midpoint before it counts as chopping around a centre.")
 atrLen   = input.int(14, "ATR length", minval = 1, group = gBal)
 minAtr   = input.float(0.10, "Min bar range vs band height", minval = 0, step = 0.01, group = gBal,
@@ -34,10 +34,12 @@ keepOld  = input.int(6, "Historical bands kept", minval = 0, maxval = 50, group 
 gSty     = "Style"
 edgeCol  = input.color(#FFFFFF, "Band edges",   group = gSty, inline = "c1")
 edgeWid  = input.int(1, "Width", minval = 1, maxval = 4, group = gSty, inline = "c1")
-liveCol  = input.color(#9AA0A6, "Active fill",  group = gSty, inline = "c2")
-upCol    = input.color(#1B7F4B, "Broken up",    group = gSty, inline = "c2")
-dnCol    = input.color(#8E2A3B, "Broken down",  group = gSty, inline = "c2")
-fillT    = input.int(88, "Fill transparency", minval = 0, maxval = 100, group = gSty)
+liveCol  = input.color(#14532D, "Band fill",   group = gSty, inline = "c2")
+fillT    = input.int(80, "Fill transparency", minval = 0, maxval = 100, group = gSty)
+recolour = input.bool(false, "Recolour the band after a confirmed break", group = gSty,
+     tooltip = "Off matches the reference charts — the band keeps its green fill whichever way price leaves it.")
+upCol    = input.color(#1B7F4B, "Broken up",   group = gSty, inline = "c3")
+dnCol    = input.color(#8E2A3B, "Broken down", group = gSty, inline = "c3")
 showMid  = input.bool(true, "Show centre line", group = gSty)
 showBrk  = input.bool(true, "Mark confirmed breaks", group = gSty)
 
@@ -93,7 +95,8 @@ confirmDn = active and outDn >= brkBars
 if active
     if confirmUp or confirmDn
         // freeze the band where the break was confirmed and colour the result
-        box.set_bgcolor(curBox, color.new(confirmUp ? upCol : dnCol, fillT))
+        if recolour
+            box.set_bgcolor(curBox, color.new(confirmUp ? upCol : dnCol, fillT))
         f_retire(curBox, curMid)
         curBox := na
         curMid := na

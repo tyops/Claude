@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Trade Daddy — SAUL'S WATCH
-//  Compact multi-timeframe trend table. Each timeframe is labelled BULL, BEAR or
-//  NEUTRAL from the Gold Regime engine, so the table and the candles always tell
+//  Compact multi-timeframe trend strip. Each timeframe is labelled BULL, BEAR or
+//  NEUTRAL from the Gold Regime engine, so the strip and the candles always tell
 //  the same story. Trade with the higher-timeframe bias, enter on the lower ones.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
@@ -9,11 +9,11 @@ indicator("Trade Daddy — Saul's Watch", "Saul's Watch", overlay = true)
 
 // ── Timeframes ───────────────────────────────────────────────────────────────
 gTf      = "Timeframes"
-tf1      = input.timeframe("60", "TF 1", group = gTf)
-tf2      = input.timeframe("240","TF 2", group = gTf)
-tf3      = input.timeframe("D",  "TF 3", group = gTf)
-tf4      = input.timeframe("W",  "TF 4", group = gTf)
-tf5      = input.timeframe("M",  "TF 5", group = gTf)
+tf1      = input.timeframe("60",  "TF 1", group = gTf)
+tf2      = input.timeframe("240", "TF 2", group = gTf)
+tf3      = input.timeframe("D",   "TF 3", group = gTf)
+tf4      = input.timeframe("W",   "TF 4", group = gTf)
+tf5      = input.timeframe("M",   "TF 5", group = gTf)
 
 // ── Regime engine (identical to Gold Regime) ─────────────────────────────────
 gEng     = "Regime engine"
@@ -24,16 +24,18 @@ trendLen = input.int(50, "Regime trend length", minval = 1, group = gEng)
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
-//  the option values ARE the built-in constants, which keeps them input-qualified
-tblPos   = input.string(position.top_right, "Table position",
-     options = [position.top_right, position.top_left, position.middle_right,
+//  option values are the built-in constants themselves, which keeps them input-qualified
+tblPos   = input.string(position.top_right, "Position",
+     options = [position.top_right, position.top_left, position.top_center,
      position.bottom_right, position.bottom_left], group = gSty)
 txtSize  = input.string(size.small, "Text size",
      options = [size.tiny, size.small, size.normal], group = gSty)
 goldCol  = input.color(#C9A227, "BULL",    group = gSty, inline = "c")
-grayCol  = input.color(#8E97A3, "BEAR",    group = gSty, inline = "c")
-neutCol  = input.color(#4A5058, "NEUTRAL", group = gSty, inline = "c")
-showChart= input.bool(true, "Include the chart timeframe", group = gSty)
+bearCol  = input.color(#5A6068, "BEAR",    group = gSty, inline = "c")
+neutCol  = input.color(#33383F, "NEUTRAL", group = gSty, inline = "c")
+hdrBg    = input.color(#1B1F26, "Header",  group = gSty, inline = "h")
+hdrTxt   = input.color(#9AA0A6, "Header text", group = gSty, inline = "h")
+bearTxt  = input.color(#C4C9D0, "BEAR text", group = gSty)
 
 // ═════════════════════════════════════════════════════════════════════════════
 f_regime() =>
@@ -45,39 +47,49 @@ f_regime() =>
     g := momBull and trendBull ? true : not momBull and not trendBull ? false : g
     momBull == trendBull ? (g ? 1 : -1) : 0
 
-st0 = f_regime()
 st1 = request.security(syminfo.tickerid, tf1, f_regime(), lookahead = barmerge.lookahead_off)
 st2 = request.security(syminfo.tickerid, tf2, f_regime(), lookahead = barmerge.lookahead_off)
 st3 = request.security(syminfo.tickerid, tf3, f_regime(), lookahead = barmerge.lookahead_off)
 st4 = request.security(syminfo.tickerid, tf4, f_regime(), lookahead = barmerge.lookahead_off)
 st5 = request.security(syminfo.tickerid, tf5, f_regime(), lookahead = barmerge.lookahead_off)
 
+//  "60" -> 1H, "240" -> 4H, "D" -> 1D, and so on
+f_tfLabel(_tf) =>
+    t   = _tf == "" ? timeframe.period : _tf
+    n   = str.tonumber(t)          // na for "D" / "W" / "M", a minute count otherwise
+    out = t
+    if na(n)
+        out := t == "D" ? "1D" : t == "W" ? "1W" : t == "M" ? "1M" : t
+    else
+        mins = int(n)
+        out := mins >= 1440 and mins % 1440 == 0 ? str.tostring(int(mins / 1440)) + "D" : mins >= 60 and mins % 60 == 0 ? str.tostring(int(mins / 60)) + "H" : str.tostring(mins) + "m"
+    out
+
 f_label(_s) =>
     _s == 1 ? "BULL" : _s == -1 ? "BEAR" : "NEUTRAL"
 
-f_col(_s) =>
-    _s == 1 ? goldCol : _s == -1 ? grayCol : neutCol
+f_bg(_s) =>
+    _s == 1 ? goldCol : _s == -1 ? bearCol : neutCol
 
-var table tbl = table.new(tblPos, 2, 7, border_width = 1,
-     frame_color = color.new(color.gray, 55), frame_width = 1)
+f_fg(_s) =>
+    _s == 1 ? color.new(#101216, 0) : bearTxt
 
-f_row(_r, _name, _state) =>
-    table.cell(tbl, 0, _r, _name, text_color = color.new(#D6DAE0, 0), text_size = txtSize,
-         bgcolor = color.new(color.black, 25))
-    table.cell(tbl, 1, _r, f_label(_state), text_color = color.new(color.black, 0), text_size = txtSize,
-         bgcolor = color.new(f_col(_state), 10))
+var table tbl = table.new(tblPos, 5, 2,
+     border_color = color.new(#0B0D11, 0), border_width = 1,
+     frame_color = color.new(#0B0D11, 0), frame_width = 1)
+
+f_col(_c, _tf, _state) =>
+    table.cell(tbl, _c, 0, f_tfLabel(_tf), text_color = hdrTxt, text_size = txtSize,
+         bgcolor = hdrBg)
+    table.cell(tbl, _c, 1, f_label(_state), text_color = f_fg(_state), text_size = txtSize,
+         bgcolor = f_bg(_state))
 
 if barstate.islast
-    table.clear(tbl, 0, 0, 1, 6)
-    r = 0
-    if showChart
-        f_row(r, "Chart · " + timeframe.period, st0)
-        r += 1
-    f_row(r,     tf1, st1)
-    f_row(r + 1, tf2, st2)
-    f_row(r + 2, tf3, st3)
-    f_row(r + 3, tf4, st4)
-    f_row(r + 4, tf5, st5)
+    f_col(0, tf1, st1)
+    f_col(1, tf2, st2)
+    f_col(2, tf3, st3)
+    f_col(3, tf4, st4)
+    f_col(4, tf5, st5)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(st4 == 1 and st4[1] != 1,   "TF4 → BULL", "Saul's Watch: TF4 flipped BULL on {{ticker}}")

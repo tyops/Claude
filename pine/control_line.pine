@@ -1,0 +1,54 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — CONTROL LINE
+//  One baseline that decides who owns the tape. Price above it favours buyers,
+//  below favours sellers. Slow and smooth on purpose — it is a bias line, not a
+//  trigger, and it is meant to be ignored inside the noise and respected at the
+//  edges.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("Trade Daddy — Control Line", "Control Line", overlay = true)
+
+gLine    = "Control Line"
+src      = input.source(hlc3, "Source",                     group = gLine)
+mode     = input.string("SMA", "Mode",
+     options = ["SMA", "EMA", "WMA", "HMA", "Rolling VWAP", "Session VWAP"], group = gLine)
+len      = input.int(50, "Length", minval = 1,              group = gLine)
+smooth   = input.int(3, "Extra smoothing", minval = 1,      group = gLine,
+     tooltip = "Light pass over the finished line so it reads as one clean curve instead of a wobbly average.")
+lineCol  = input.color(#C0707E, "Colour",  group = gLine, inline = "s")
+lineWid  = input.int(3, "Width", minval = 1, maxval = 6, group = gLine, inline = "s")
+sideCol  = input.bool(false, "Tint by side", group = gLine,
+     tooltip = "Off matches the reference charts — one constant dusty-rose line. On colours it by which side of the line price is trading.")
+upCol    = input.color(#C9A227, "Buyers",  group = gLine, inline = "t")
+dnCol    = input.color(#8E97A3, "Sellers", group = gLine, inline = "t")
+
+vol      = nz(volume)
+volSum   = math.sum(vol, len)
+rollVwap = volSum > 0 ? math.sum(src * vol, len) / volSum : ta.ema(src, len)
+
+anchorTf = timeframe.isintraday ? "D" : timeframe.isdaily ? "M" : "12M"
+newSess  = timeframe.change(anchorTf)
+var float cumPV = 0.0
+var float cumV  = 0.0
+if newSess
+    cumPV := 0.0
+    cumV  := 0.0
+cumPV   += src * vol
+cumV    += vol
+sessVwap = cumV > 0 ? cumPV / cumV : src
+
+raw = switch mode
+    "EMA"          => ta.ema(src, len)
+    "WMA"          => ta.wma(src, len)
+    "HMA"          => ta.hma(src, len)
+    "Rolling VWAP" => rollVwap
+    "Session VWAP" => sessVwap
+    => ta.sma(src, len)
+
+control = ta.ema(raw, smooth)
+buyers  = close > control
+
+plot(control, "Control Line", color = sideCol ? (buyers ? upCol : dnCol) : lineCol, linewidth = lineWid)
+
+alertcondition(ta.crossover(close, control),  "Price took the Control Line", "Control Line: price closed above the line on {{ticker}}")
+alertcondition(ta.crossunder(close, control), "Price lost the Control Line", "Control Line: price closed below the line on {{ticker}}")
