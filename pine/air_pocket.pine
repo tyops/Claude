@@ -8,7 +8,7 @@
 //  They almost always get filled; the open ones tell you where price is drawn to.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Air Pocket", "Air Pocket", overlay = true,
+indicator("Air Pocket", overlay = true,
      max_boxes_count = 500, max_labels_count = 100)
 
 // ── Detection ────────────────────────────────────────────────────────────────

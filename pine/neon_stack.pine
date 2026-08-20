@@ -16,7 +16,7 @@
 //  pick "Move to → New pane below".
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Neon Stack", "Neon Stack", overlay = false)
+indicator("Neon Stack", overlay = false)
 
 // ── Stack ────────────────────────────────────────────────────────────────────
 gStk     = "Stack"
@@ -44,7 +44,7 @@ showLvls = input.bool(false, "Show 30 / 50 / 70 levels", group = gSty,
 // ── Stars ────────────────────────────────────────────────────────────────────
 gStar    = "Stars"
 showStar = input.bool(true, "Show stars",             group = gStar)
-starSz   = input.string("Small", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
 starGap  = input.float(8.0, "Star gap below the band", minval = 0, step = 0.5, group = gStar)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")

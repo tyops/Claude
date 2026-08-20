@@ -5,7 +5,7 @@
 //  the same story. Trade with the higher-timeframe bias, enter on the lower ones.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Saul's Watch", "Saul's Watch", overlay = true)
+indicator("Saul's Watch", overlay = true)
 
 // ── Timeframes ───────────────────────────────────────────────────────────────
 gTf      = "Timeframes"

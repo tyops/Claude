@@ -9,7 +9,7 @@
 //  pullbacks into it are the higher-probability continuation zones.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Carbon Structure", "Carbon Structure", overlay = true)
+indicator("Carbon Structure", overlay = true)
 
 // ── Structure ────────────────────────────────────────────────────────────────
 gStr     = "Structure"
@@ -39,13 +39,15 @@ sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gCmp)
 sqzPct   = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gCmp)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+//  all five run every bar and the type picks between the finished values, so no
+//  moving average is ever calculated inside a conditional branch
 f_ma(_src, _len, _type) =>
-    switch _type
-        "SMA"  => ta.sma(_src, _len)
-        "WMA"  => ta.wma(_src, _len)
-        "HMA"  => ta.hma(_src, _len)
-        "ALMA" => ta.alma(_src, _len, 0.85, 6)
-        => ta.ema(_src, _len)
+    s = ta.sma(_src, _len)
+    e = ta.ema(_src, _len)
+    w = ta.wma(_src, _len)
+    h = ta.hma(_src, _len)
+    a = ta.alma(_src, _len, 0.85, 6)
+    _type == "SMA" ? s : _type == "WMA" ? w : _type == "HMA" ? h : _type == "ALMA" ? a : e
 
 f_norm(_src, _len) =>
     hi  = ta.highest(_src, _len)
@@ -58,8 +60,11 @@ f_norm(_src, _len) =>
 // ═════════════════════════════════════════════════════════════════════════════
 fast1    = f_ma(src, fastLen, maType)
 slow1    = f_ma(src, slowLen, maType)
-fast     = dblSm ? f_ma(fast1, math.max(1, int(fastLen / 2)), maType) : fast1
-slow     = dblSm ? f_ma(slow1, math.max(1, int(slowLen / 2)), maType) : slow1
+//  second pass runs every bar, not inside the ternary, so it stays consistent
+fast2    = f_ma(fast1, math.max(1, int(fastLen / 2)), maType)
+slow2    = f_ma(slow1, math.max(1, int(slowLen / 2)), maType)
+fast     = dblSm ? fast2 : fast1
+slow     = dblSm ? slow2 : slow1
 
 atr      = ta.atr(atrLen)
 basis    = math.avg(fast, slow)

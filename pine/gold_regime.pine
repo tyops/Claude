@@ -7,7 +7,7 @@
 //    ★ magenta = bear trigger
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Gold Regime", "Gold Regime", overlay = true)
+indicator("Gold Regime", overlay = true)
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 gEng     = "Engine"
@@ -79,20 +79,22 @@ solidBod = input.bool(true,  "Solid bodies",                 group = gSty,
 goldCol  = input.color(#C9A227, "Gold regime", group = gSty, inline = "rc")
 grayCol  = input.color(#9AA0A6, "Gray regime", group = gSty, inline = "rc")
 showStar = input.bool(true, "Show stars",                    group = gSty)
-starSz   = input.string("Small", "Star size", options = ["Tiny", "Small", "Normal"], group = gSty)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gSty)
 starOff  = input.float(1.5, "Star offset (ATR)", minval = 0, step = 0.1, group = gSty)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gSty, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gSty, inline = "sc")
 showTri  = input.bool(false, "Triangle markers instead of stars", group = gSty)
 
 // ── Helper ───────────────────────────────────────────────────────────────────
+//  all five run every bar and the type picks between the finished values, so no
+//  moving average is ever calculated inside a conditional branch
 f_ma(_src, _len, _type) =>
-    switch _type
-        "SMA"  => ta.sma(_src, _len)
-        "WMA"  => ta.wma(_src, _len)
-        "HMA"  => ta.hma(_src, _len)
-        "ALMA" => ta.alma(_src, _len, 0.85, 6)
-        => ta.ema(_src, _len)
+    s = ta.sma(_src, _len)
+    e = ta.ema(_src, _len)
+    w = ta.wma(_src, _len)
+    h = ta.hma(_src, _len)
+    a = ta.alma(_src, _len, 0.85, 6)
+    _type == "SMA" ? s : _type == "WMA" ? w : _type == "HMA" ? h : _type == "ALMA" ? a : e
 
 f_req(_sym, _tf) =>
     request.security(_sym, _tf == "" ? timeframe.period : _tf, close, ignore_invalid_symbol = true)
@@ -132,7 +134,8 @@ rsiBearOk = not useRsi or rsi < rsiMid
 // ── VWAP side ────────────────────────────────────────────────────────────────
 vol_      = nz(volume)
 volSum    = math.sum(vol_, vwapLen)
-vwap      = volSum > 0 ? math.sum(hlc3 * vol_, vwapLen) / volSum : ta.ema(hlc3, vwapLen)
+vwapFall  = ta.ema(hlc3, vwapLen)      // computed every bar, not inside the ternary
+vwap      = volSum > 0 ? math.sum(hlc3 * vol_, vwapLen) / volSum : vwapFall
 vwapBull  = not useVwap or close > vwap
 vwapBear  = not useVwap or close < vwap
 
@@ -156,8 +159,7 @@ mcBullDiv = priceLL and mcHigherLo                  // price down, breadth impro
 mcBull    = mcOsc > 0 or mcBullDiv
 haveInt   = not na(pcr) or not na(vix) or netAdv != 0
 bullVotes = (pcrBull ? 1 : 0) + (vixBull ? 1 : 0) + (mcBull ? 1 : 0)
-bearVotes = (not pcrBull and not na(pcr) ? 1 : 0) + (not vixBull and not na(vix) ? 1 : 0) +
-            (not mcBull or mcBearDiv ? 1 : 0)
+bearVotes = (not pcrBull and not na(pcr) ? 1 : 0) + (not vixBull and not na(vix) ? 1 : 0) + (not mcBull or mcBearDiv ? 1 : 0)
 intBull   = not useInt or not haveInt or bullVotes >= intVotes
 intBear   = not useInt or not haveInt or bearVotes >= intVotes
 

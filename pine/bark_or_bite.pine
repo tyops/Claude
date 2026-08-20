@@ -14,7 +14,7 @@
 //  2-ATR dip; the same dip in a trend that never gave back more than 0.8 is.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Bark or Bite", "Bark or Bite", overlay = true,
+indicator("Bark or Bite", overlay = true,
      max_labels_count = 100)
 
 // ── Memory ───────────────────────────────────────────────────────────────────
@@ -133,10 +133,10 @@ plotshape(showBark and barkNow and bias == -1, "Bark (downtrend)", shape.circle,
 var label stat = na
 if showStat and barstate.islast
     label.delete(stat)
-    txt = (bias == 1 ? "BITE ▲ long bias" : "BITE ▼ short bias") + "\npullback " +
-         str.tostring(curPull, "#.##") + " of " + str.tostring(thresh, "#.##") + " ATR" +
-         "\nmemory " + str.tostring(array.size(mem)) + " pullbacks" +
-         (na(memAvg) ? "" : ", avg " + str.tostring(memAvg, "#.##"))
+    head = bias == 1 ? "BITE ▲ long bias" : "BITE ▼ short bias"
+    body = "\npullback " + str.tostring(curPull, "#.##") + " of " + str.tostring(thresh, "#.##") + " ATR"
+    tail = "\nmemory " + str.tostring(array.size(mem)) + " pullbacks" + (na(memAvg) ? "" : ", avg " + str.tostring(memAvg, "#.##"))
+    txt  = head + body + tail
     stat := label.new(bar_index, high, txt, xloc = xloc.bar_index, yloc = yloc.price,
          style = label.style_label_left, color = color.new(#0B0D11, 15),
          textcolor = color.new(biasCol, 0), size = size.small)

@@ -6,7 +6,7 @@
 //  edges.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Control Line", "Control Line", overlay = true)
+indicator("Control Line", overlay = true)
 
 gLine    = "Control Line"
 src      = input.source(hlc3, "Source",                     group = gLine)
@@ -24,7 +24,14 @@ dnCol    = input.color(#8E97A3, "Sellers", group = gLine, inline = "t")
 
 vol      = nz(volume)
 volSum   = math.sum(vol, len)
-rollVwap = volSum > 0 ? math.sum(src * vol, len) / volSum : ta.ema(src, len)
+
+//  every average is computed on every bar and selected afterwards, so none of
+//  them sits inside a conditional branch
+smaV     = ta.sma(src, len)
+emaV     = ta.ema(src, len)
+wmaV     = ta.wma(src, len)
+hmaV     = ta.hma(src, len)
+rollVwap = volSum > 0 ? math.sum(src * vol, len) / volSum : emaV
 
 anchorTf = timeframe.isintraday ? "D" : timeframe.isdaily ? "M" : "12M"
 newSess  = timeframe.change(anchorTf)
@@ -38,12 +45,12 @@ cumV    += vol
 sessVwap = cumV > 0 ? cumPV / cumV : src
 
 raw = switch mode
-    "EMA"          => ta.ema(src, len)
-    "WMA"          => ta.wma(src, len)
-    "HMA"          => ta.hma(src, len)
+    "EMA"          => emaV
+    "WMA"          => wmaV
+    "HMA"          => hmaV
     "Rolling VWAP" => rollVwap
     "Session VWAP" => sessVwap
-    => ta.sma(src, len)
+    => smaV
 
 control = ta.ema(raw, smooth)
 buyers  = close > control

@@ -10,7 +10,7 @@
 //  White surging while gold is weak = violent swings and failure risk.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Silver Flow", "Silver Flow", overlay = false, max_bars_back = 5000)
+indicator("Silver Flow", overlay = false, max_bars_back = 5000)
 
 // ── Flow ─────────────────────────────────────────────────────────────────────
 gFlow    = "Flow"
@@ -53,7 +53,7 @@ showLvls = input.bool(false, "Show 50 level", group = gSty,
 // ── Stars ────────────────────────────────────────────────────────────────────
 gStar    = "Stars"
 showStar = input.bool(true, "Show stars", group = gStar)
-starSz   = input.string("Small", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
 

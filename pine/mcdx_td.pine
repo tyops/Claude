@@ -13,7 +13,7 @@
 //  clamped into a 0-20 band so the three are directly comparable.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — MCDX TD", "MCDX TD", overlay = false)
+indicator("MCDX TD", overlay = false)
 
 // ── Banker / smart money ─────────────────────────────────────────────────────
 gBank    = "Banker (smart money)"

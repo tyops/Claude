@@ -18,7 +18,7 @@
 //  else depends on it.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Uranium Band", "Uranium Band", overlay = true,
+indicator("Uranium Band", overlay = true,
      max_lines_count = 500, max_boxes_count = 200, max_bars_back = 1000, behind_chart = true)
 
 // ── Balance detection ────────────────────────────────────────────────────────

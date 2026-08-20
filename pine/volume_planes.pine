@@ -6,7 +6,7 @@
 //  where price has already agreed on value — support and resistance on retests.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
-indicator("Trade Daddy — Volume Planes", "Volume Planes", overlay = true,
+indicator("Volume Planes", overlay = true,
      max_boxes_count = 500, max_lines_count = 100, max_bars_back = 5000)
 
 // ── Profile ──────────────────────────────────────────────────────────────────
