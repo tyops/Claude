@@ -1,0 +1,2430 @@
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//  VELEZ METHOD MASTER INDICATOR  ·  Unofficial study tool  ·  build velez-map/1.0.0
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+//  WHAT THIS IS
+//  ------------
+//  An INDICATOR (not a strategy) that renders a state -> position -> event workspace derived from
+//  a third-party field manual titled "The Velez Method" (71 pages), which reorganises eight public
+//  video lessons attributed to Oliver Velez.
+//
+//  WHAT THIS IS NOT
+//  ----------------
+//  * NOT official, endorsed by, affiliated with, or authorised by Oliver Velez or any related
+//    entity. No proprietary logo, artwork or branding is used.
+//  * NOT a strategy, backtest, broker simulator, order router or execution engine. There are no
+//    fills, no size, no position and no P&L. What it draws is a VIRTUAL METHODOLOGY LIFECYCLE.
+//  * NOT a claim of accuracy, profitability, win rate or performance. Every percentage in the
+//    source manual is self-reported by its subject, unpublished, and carries no stated sample,
+//    date range or instrument set. None are used as outputs, score weights or defaults.
+//  * NOT a faithful mechanisation of the method. The source states its own definitions are
+//    deliberately loose and instructs the reader to "eyeball it rather than measure". EVERY
+//    numeric threshold here is an ADDITION by this implementation, marked "~" on the chart.
+//  * NOT investment advice.
+//
+//  TRACEABILITY
+//  ------------
+//      [RULE-### | CON-### | SRC-### p.N | SOURCE-CLASS / IMPLEMENTATION-CLASS]
+//  Source classes: DIRECT | IMPLIED | SUBJECTIVE | UNSUPPORTED
+//  Impl classes:   EXACT_TRANSLATION | PROGRAMMABLE_APPROXIMATION | EXPERIMENTAL |
+//                  PLATFORM_SAFEGUARD | DOCUMENTATION_ONLY | NOT_IMPLEMENTED
+//
+//  COMPANION DOCUMENTS — read before relying on anything here
+//      01_MASTER_RULEBOOK.md         evidence ledger, page coverage, claims boundary
+//      02_CONCEPT_TO_CODE_MAP.md     per-concept disposition + approximation worksheets W1..W23
+//      03_VISUAL_DESIGN_SPEC.md      display modes, anti-clutter heuristic
+//      04_INDICATOR_ARCHITECTURE.md  modules, repaint policy, same-bar policy, resource budget
+//      06_RULE_COVERAGE_AUDIT.md     forward + reverse traceability
+//      07_QA_REVIEW.md               QA passes, limitations, verification status
+//
+//  VERIFICATION STATUS: static review completed. TradingView compilation and live-chart
+//  verification were NOT performed in the authoring environment. See 07_QA_REVIEW.md §5.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+//@version=6
+indicator(
+     title            = "Velez Method Master Indicator (Unofficial Study Tool)",
+     shorttitle       = "VELEZ MAP",
+     overlay          = true,
+     max_labels_count = 500,
+     max_lines_count  = 500,
+     max_boxes_count  = 500,
+     max_bars_back    = 5000)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §00  CONSTANT FAMILIES AND USER-DEFINED TYPES
+//      [RULE-001 | PLATFORM_SAFEGUARD PS-12]
+//      Named int constants stand in for the `enum` keyword: no Pine compiler was available in the
+//      authoring environment, and const-int families carry zero compile risk while giving the same
+//      readability and the same exhaustive-switch discipline.
+//      See 04_INDICATOR_ARCHITECTURE.md §3.1.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+const int ST_NARROW  = 0
+const int ST_REGULAR = 1
+const int ST_WIDE    = 2
+
+const int NG_NONE = 0
+const int NG_G1   = 1
+const int NG_G2   = 2
+const int NG_G3   = 3
+
+const int DIR_NONE  =  0
+const int DIR_LONG  =  1
+const int DIR_SHORT = -1
+
+const int EV_NONE     = 0
+const int EV_TAKEOUT  = 1
+const int EV_COLOUR   = 2
+const int EV_TAIL     = 3
+const int EV_ELEPHANT = 4
+const int EV_COMBO    = 5
+
+const int SM_NONE     = 0
+const int SM_INITIAL  = 1
+const int SM_PIVOT    = 2
+const int SM_FATBAR   = 3
+const int SM_COLOUR   = 4
+const int SM_MA20     = 5
+const int SM_MA8      = 6
+const int SM_BARBYBAR = 7
+
+const int LC_IDLE         = 0
+const int LC_WATCHING     = 1
+const int LC_DEVELOPING   = 2
+const int LC_QUALIFIED    = 3
+const int LC_LONG_ACTIVE  = 4
+const int LC_SHORT_ACTIVE = 5
+const int LC_EXIT_CONTEXT = 6
+const int LC_INVALIDATED  = 7
+const int LC_COMPLETED    = 8
+
+const int FID_STRICT       = 0
+const int FID_APPROX       = 1
+const int FID_EXPERIMENTAL = 2
+
+const int MODE_CLEAN    = 0
+const int MODE_ANALYSIS = 1
+const int MODE_FULL     = 2
+const int MODE_DEBUG    = 3
+
+// Blocker bitmask
+const int BLK_NO_EVENT      = 1
+const int BLK_INSIDE_STATE  = 2
+const int BLK_PLUTO         = 4
+const int BLK_AGAINST_20    = 8
+const int BLK_DUMB_STOP     = 16
+const int BLK_LADDER_SKIP   = 32
+const int BLK_THREE_FINGERS = 64
+const int BLK_LIFECYCLE     = 128
+const int BLK_WARMUP        = 256
+const int BLK_HTF_OPPOSED   = 512
+const int BLK_CONFLICT      = 1024
+
+// ── Named internal constants ──────────────────────────────────────────────────────────────────
+// Every behavioural number in this script is either an input, a source-backed level, or one of
+// the named constants below. There are no unexplained magic numbers in executable code; the
+// remaining literals are rendering values (transparencies, table row indices) enumerated in
+// 06_RULE_COVERAGE_AUDIT.md §3.
+
+// Sentinels — chosen so a missing value fails CLOSED (the condition evaluates to false).
+const float SENTINEL_BIG   = 99.0      // "not a reset": any value far above resetDrift's max (10)
+const int   SENTINEL_BARS  = 999999    // "never occurred" for ta.barssince
+
+// Snowman diagnostic (CON-033 | SRC-097 p.12). Debug-only; emits no signal, so these are
+// deliberately fixed rather than exposed as inputs — they describe the source's counterexample
+// ("MOST of the bar is body" + a visible wick), not a tunable detector.
+const float SNOWMAN_MIN_BODY = 0.5     // body dominates the range
+const float SNOWMAN_MIN_WICK = 0.15    // but a wick is visible enough to be mistaken for a tail
+
+// Anti-clutter R5 (03_VISUAL_DESIGN_SPEC.md §6): alternating far-offset multiplier.
+const float ALT_OFFSET_MULT = 1.8
+
+// EXPERIMENTAL percentile buckets for CON-130. Symmetric quartile split; NOT from the source.
+const float EXP_NARROW_PCT = 25.0
+const float EXP_WIDE_PCT   = 75.0
+const int   EXP_DENSITY_LEN = 20       // rolling window for the experimental density meter
+
+// Retracement percentages — SOURCE-BACKED levels (SRC-216 p.46). The LEVELS are the source's;
+// the hit rates it attaches to them are quoted, never asserted.
+const float RET_25 = 0.25
+const float RET_50 = 0.50
+const float RET_75 = 0.75
+
+// Drawing-object caps (04_INDICATOR_ARCHITECTURE.md §10.3)
+const int CAP_EV_LABEL  = 120
+const int CAP_EV_LINE   = 60
+const int CAP_LC_LABEL  = 30
+const int CAP_CTX_BOX   = 60
+const int CAP_CTX_LINE  = 20
+const int CAP_CTX_LABEL = 20
+
+// Input-group labels
+const string G_GEN   = "1 · GENERAL"
+const string G_FID   = "2 · SOURCE FIDELITY"
+const string G_MODE  = "3 · DISPLAY MODE"
+const string G_MA    = "4 · MOVING AVERAGES"
+const string G_STATE = "5 · MARKET STATE"
+const string G_POS   = "6 · POSITION"
+const string G_ELE   = "7 · ELEPHANT BARS"
+const string G_TAIL  = "8 · TAIL BARS"
+const string G_CC    = "9 · COLOUR CHANGES"
+const string G_GAP   = "10 · GAPS"
+const string G_SETUP = "11 · SPECIALISED SETUPS"
+const string G_ENTRY = "12 · ENTRY SIGNALS"
+const string G_TRADE = "13 · TRADE MANAGEMENT"
+const string G_PROF  = "14 · PROFIT MANAGEMENT"
+const string G_VIS   = "15 · VISUALS"
+const string G_DASH  = "16 · DASHBOARD"
+const string G_ALERT = "17 · ALERTS"
+const string G_ADV   = "18 · ADVANCED"
+const string G_DBG   = "19 · DEBUG"
+
+// Tooltip provenance prefixes — every threshold input declares where its default came from.
+const string TT_APPROX = "[APPROXIMATION — this number is ADDED by this implementation. The " +
+     "source gives no value and explicitly instructs the reader to judge by eye rather than " +
+     "measure. See 02_CONCEPT_TO_CODE_MAP.md §11.] "
+const string TT_SRC  = "[SOURCE-BACKED — stated in the source. See 01_MASTER_RULEBOOK.md.] "
+const string TT_PLAT = "[PLATFORM — a Pine/TradingView reliability decision, not methodology.] "
+const string TT_EXP  = "[EXPERIMENTAL — NOT from the source. Exploration only. Off by default, " +
+     "and inert unless the fidelity layer is set to 'Include experimental modules'.] "
+
+// One qualified event candidate on one bar.  [RULE-064 | same-bar policy S5]
+type EventCandidate
+    int    rank     = 0
+    int    dir      = 0
+    float  refLevel = na
+    string lbl      = ""
+    bool   approx   = false
+
+// The virtual methodology lifecycle. Never a real position.  [RULE-170 | CON-110]
+type Lifecycle
+    int    state       = 0
+    int    dir         = 0
+    int    entryBar    = 0
+    float  entryRef    = na
+    float  initStop    = na
+    float  stop        = na
+    int    stopMethod  = 0
+    int    adds        = 0
+    int    pushes      = 0
+    int    entryState  = 1
+    bool   isOpening   = false
+    float  initPeak    = na
+    bool   initDone    = false
+    float  lastPushExt = na
+    string exitReason  = ""
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §01  INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── 1 · GENERAL ───────────────────────────────────────────────────────────────────────────────
+useEmoji = input.bool(false, "Use symbol glyphs (off = ASCII only)", group = G_GEN,
+     tooltip = TT_PLAT + "No meaning is ever carried by a glyph alone; ASCII fallbacks convey " +
+     "the same information. The '~' approximation marker is always ASCII.")
+cbSafe = input.bool(false, "Colour-blind-safe accents", group = G_GEN,
+     tooltip = TT_PLAT + "Substitutes blue/orange for the INDICATOR's accents. Candle colours " +
+     "are untouched, because the method reads bar colour directly (SRC-102).")
+tickMult = input.int(1, "Tick multiplier for 'one penny' offsets", minval = 1, maxval = 100,
+     group = G_GEN,
+     tooltip = TT_PLAT + "The source says 'one penny' (SRC-106/132/155). That is an " +
+     "instrument-specific increment; this script uses syminfo.mintick x this multiplier.")
+
+// ── 2 · SOURCE FIDELITY ───────────────────────────────────────────────────────────────────────
+fidSel = input.string("Source + documented approximations", "Fidelity layer",
+     options = ["Strict source mechanics only", "Source + documented approximations",
+                "Include experimental modules"], group = G_FID,
+     tooltip = "STRICT: only events whose TRIGGER is fully specified by the source may open a " +
+     "lifecycle (colour change, red/green bar takeout, strict tail bar, the opening-bell " +
+     "sequence). State and position are computed and displayed but do NOT gate signals, because " +
+     "gating requires a threshold the source refuses to supply. Consequence: noisier in raw " +
+     "events, but free of invented gating.\n\n" +
+     "SOURCE + APPROXIMATIONS (default): the full state->position->event funnel. Quieter and " +
+     "closer to the method's intent, but depends on added thresholds.\n\n" +
+     "EXPERIMENTAL: additionally enables the clearly non-source modules in group 18. " +
+     "Those modules are individually off by default as well.")
+showApproxMarks = input.bool(true, "Show '~' approximation marker", group = G_FID,
+     tooltip = TT_PLAT + "Strongly recommended. Marks every value depending on a threshold this " +
+     "implementation added rather than took from the source.")
+enforce20Dir = input.bool(true, "Enforce: never trade against the 20's direction", group = G_FID,
+     tooltip = TT_SRC + "SRC-224 p.43 (C7 / V5.4). The source calls this the single most " +
+     "consequential rule in the material. Separating rising/declining from flat needs a slope " +
+     "threshold, which is an approximation.")
+enforceDumbStop = input.bool(true, "Enforce: the stop must sit outside the state", group = G_FID,
+     tooltip = TT_SRC + "SRC-077 p.11,55 (C14 / V8.4) — 'the dumb stop'. The opening-bell method " +
+     "is the source's own explicitly named exception (SRC-078 p.11) and bypasses this gate.")
+
+// ── 3 · DISPLAY MODE ──────────────────────────────────────────────────────────────────────────
+modeSel = input.string("Clean", "Display mode",
+     options = ["Clean", "Analysis", "Full Velez", "Debug"], group = G_MODE,
+     tooltip = "Display modes change VISIBILITY AND DENSITY ONLY. They never change which " +
+     "signals exist, when they fire, or what the alerts do. Only the fidelity layer does that.")
+historyCap = input.int(300, "Recent-history cap (bars)", minval = 50, maxval = 1000, group = G_MODE,
+     tooltip = TT_PLAT + "Full Velez Mode renders events within this bounded window only. " +
+     "Unbounded historical rendering is NOT possible: Pine caps labels, lines and boxes at 500 " +
+     "each.")
+minLabelGap = input.int(3, "Minimum bars between same-family labels", minval = 0, maxval = 50,
+     group = G_MODE, tooltip = TT_PLAT + "Anti-clutter heuristic R3. Clean Mode forces 8.")
+labelOffAtr = input.float(0.5, "Label offset (ATR units)", minval = 0.0, maxval = 5.0, step = 0.1,
+     group = G_MODE,
+     tooltip = TT_PLAT + "Offsets scale with volatility, not with zoom. NOTE: Pine has no access " +
+     "to rendered pixel geometry, so non-overlapping labels CANNOT be guaranteed — only made rare.")
+
+// ── 4 · MOVING AVERAGES ───────────────────────────────────────────────────────────────────────
+len20 = input.int(20, "Short SMA length", minval = 2, maxval = 400, group = G_MA,
+     tooltip = TT_SRC + "SRC-030/031 p.6 (C4). The source fixes this at 20, SIMPLE, on CLOSE. " +
+     "Changing it departs from the method.")
+len200 = input.int(200, "Long SMA length", minval = 20, maxval = 1000, group = G_MA,
+     tooltip = TT_SRC + "SRC-030/031 p.6 (C4). Fixed at 200, simple, on close.")
+len8 = input.int(8, "Situational trail SMA length", minval = 2, maxval = 100, group = G_MA,
+     tooltip = TT_SRC + "SRC-033 p.6,29 (C4 / V2.2). The 8 is a TRAILING tool only, never an " +
+     "entry tool, and appears only when price outruns the 20.")
+bandMult = input.float(0.25, "MA band half-width (ATR units)", minval = 0.0, maxval = 3.0,
+     step = 0.05, group = G_MA,
+     tooltip = TT_APPROX + "The CONCEPT is source-backed and stated twice (SRC-042 p.7; SRC-003 " +
+     "p.2): an average is a zone and a small penetration is 'a lean, not a break'. The WIDTH is " +
+     "never given by anyone. Worksheet W3.")
+showBands = input.bool(true, "Show MA bands", group = G_MA)
+showMa8   = input.bool(true, "Show the 8 SMA while escalated", group = G_MA)
+
+// ── 5 · MARKET STATE ──────────────────────────────────────────────────────────────────────────
+stateBasisSel = input.string("ATR", "State / position measurement basis",
+     options = ["ATR", "% of price"], group = G_STATE, tooltip = TT_APPROX + "Worksheet W1.")
+narrowMult = input.float(1.0, "Narrow threshold (20/200 gap)", minval = 0.05, maxval = 20.0,
+     step = 0.05, group = G_STATE,
+     tooltip = TT_APPROX + "SRC-051 p.8,54: 'Are the 20 and the 200 relatively close together? " +
+     "... an EYEBALL judgement' and 'Do not get a geometric tool out to measure the gap.' The " +
+     "source does not merely omit a threshold — it instructs against creating one. W1.")
+wideMult = input.float(3.0, "Wide threshold (20/200 gap)", minval = 0.1, maxval = 50.0, step = 0.1,
+     group = G_STATE, tooltip = TT_APPROX + "SRC-060 p.9. Worksheet W1.")
+mergeMult = input.float(0.5, "Merge threshold (20/200 pressed together)", minval = 0.01,
+     maxval = 10.0, step = 0.05, group = G_STATE,
+     tooltip = TT_APPROX + "SRC-198 p.39 (V4.6) — 'the 20 and the 200 converging tightly " +
+     "together'. Tightness never quantified.")
+slopeLen = input.int(10, "Slope / flatness lookback (bars)", minval = 2, maxval = 200,
+     group = G_STATE, tooltip = TT_APPROX + "Worksheet W2.")
+flatThresh = input.float(0.05, "Flat threshold (ATR per bar)", minval = 0.0, maxval = 2.0,
+     step = 0.01, group = G_STATE,
+     tooltip = TT_APPROX + "SRC-035/055. 'Flat' is never defined numerically. The source's one " +
+     "quantitative hint — 'ideally near 45 degrees' — is a chart-RENDERING artefact, not a " +
+     "property of the data, and is therefore deliberately NOT used here. Worksheet W2.")
+sleepyBars = input.int(10, "Sleepy-state confirmation bars", minval = 2, maxval = 100,
+     group = G_STATE,
+     tooltip = TT_APPROX + "SRC-207 p.33 (V3.4) — 'All three items flat and sideways at the same " +
+     "time ... NOT TWO OF THREE.' Duration never given.")
+
+// ── 6 · POSITION ──────────────────────────────────────────────────────────────────────────────
+posBasisSel = input.string("ATR", "Position band basis", options = ["ATR", "State width"],
+     group = G_POS,
+     tooltip = TT_APPROX + "Worksheet W4. 'State width' scales position with the state that " +
+     "produced it, but degenerates in very tight states — the HIGHEST-quality states — where " +
+     "position one would collapse to a sliver, inverting the source's intent.")
+p1Max = input.float(1.0, "Position 1 outer edge (from the state edge)", minval = 0.05,
+     maxval = 20.0, step = 0.05, group = G_POS,
+     tooltip = TT_APPROX + "SRC-071 p.10. The ladder STRUCTURE is direct; the boundaries are only " +
+     "ever 'immediately above', 'not close not far', 'wide'. Worksheet W4.")
+p2Max = input.float(2.5, "Position 2 outer edge (from the state edge)", minval = 0.1, maxval = 50.0,
+     step = 0.1, group = G_POS, tooltip = TT_APPROX + "Worksheet W4.")
+boxGapMult = input.float(1.5, "Box: maximum 20/200 gap", minval = 0.05, maxval = 20.0, step = 0.05,
+     group = G_POS, tooltip = TT_APPROX + "SRC-209 p.34-35 (V3.7).")
+boxPriceMult = input.float(1.0, "Box: maximum price distance from the 20", minval = 0.05,
+     maxval = 20.0, step = 0.05, group = G_POS, tooltip = TT_APPROX + "SRC-209 p.34-35 (V3.7).")
+zoneBoxBars = input.int(30, "Position zone box width (bars)", minval = 5, maxval = 300,
+     group = G_POS, tooltip = TT_PLAT + "Zone boxes are anchored at the right edge only.")
+
+// ── 7 · ELEPHANT BARS ─────────────────────────────────────────────────────────────────────────
+eleModelSel = input.string("Average multiple", "Elephant model",
+     options = ["Average multiple", "Local maximum"], group = G_ELE,
+     tooltip = TT_APPROX + "Worksheet W5. 'Local maximum' is the more literal reading of 'larger " +
+     "than the bars around it' but has no absolute floor, so on its own it would label the " +
+     "biggest bar of a dead range an institutional footprint — contradicting the source's own " +
+     "rationale (SRC-093). A 1 x ATR floor is applied in that mode.")
+eleLookback = input.int(10, "Elephant neighbourhood (bars)", minval = 2, maxval = 100, group = G_ELE,
+     tooltip = TT_APPROX + "SRC-092 p.12 — 'the bars around it' gives no count.")
+eleRangeMult = input.float(1.8, "Elephant range multiple", minval = 1.0, maxval = 10.0, step = 0.1,
+     group = G_ELE,
+     tooltip = TT_APPROX + "SRC-092 p.12 — 'A bar VISIBLY LARGER and taller than the bars around " +
+     "it.' No ratio is given anywhere in the source. Worksheet W5.")
+eleBodyFrac = input.float(0.5, "Elephant minimum body fraction", minval = 0.0, maxval = 1.0,
+     step = 0.05, group = G_ELE,
+     tooltip = TT_APPROX + "SEMI-ANCHORED: the source says 'large-bodied' (SRC-191 p.37) and its " +
+     "diagram shows solid bodies (SRC-109 p.12). Without this, a wide-range doji — the opposite " +
+     "of a conviction bar — would qualify.")
+exhaustLegs = input.int(3, "Legs before an elephant reads as exhaustion", minval = 1, maxval = 10,
+     group = G_ELE,
+     tooltip = TT_APPROX + "ANCHORED to SRC-265 p.20 — 'the market tends to pause, rest or " +
+     "reverse after THREE TO FIVE pushes ... three happens more often'. NOTE the source's own " +
+     "illustration of an exhaustion elephant says 'five legs into the move' (p.26), so 3 is the " +
+     "more conservative, earlier-warning choice. Worksheet W18.")
+emergenceLb = input.int(20, "Emergence lookback for 'igniting' (bars)", minval = 2, maxval = 200,
+     group = G_ELE, tooltip = TT_APPROX + "Worksheet W18.")
+
+// ── 8 · TAIL BARS ─────────────────────────────────────────────────────────────────────────────
+tailMinFrac = input.float(0.50, "Tail minimum fraction of range", minval = 0.2, maxval = 0.95,
+     step = 0.01, group = G_TAIL,
+     tooltip = TT_APPROX + "SEMI-ANCHORED: SRC-096 p.12 says 'MOST of the bar must be tail', " +
+     "which carries a defensible literal reading of more than half. The exact ratio is not given. " +
+     "Worksheet W6.")
+tailBodyMax = input.float(0.35, "Tail maximum body fraction", minval = 0.05, maxval = 0.8,
+     step = 0.01, group = G_TAIL,
+     tooltip = TT_APPROX + "SRC-096 p.12 — 'The body is the SMALL part.' No ratio given. W6.")
+tailDominance = input.bool(true, "Signal tail must exceed the opposite tail", group = G_TAIL,
+     tooltip = TT_APPROX + "Without this a long-legged doji with two large tails qualifies. That " +
+     "is a balance bar, not the rejection bar the source describes.")
+showSnowman = input.bool(true, "Show snowman (not-a-tail) diagnostics in Debug", group = G_TAIL,
+     tooltip = TT_SRC + "SRC-097 p.12 — the source names the counterfeit explicitly and says 'it " +
+     "does not count'. Debug Mode only, so the boundary stays inspectable.")
+
+// ── 9 · COLOUR CHANGES ────────────────────────────────────────────────────────────────────────
+ccRefSel = input.string("Nearest opposite bar", "Colour-change reference",
+     options = ["Nearest opposite bar", "Opposite-run extreme"], group = G_CC,
+     tooltip = TT_APPROX + "SRC-104 p.13 says 'the first green bar that takes out A red high' " +
+     "without saying WHICH red when several print. 'Nearest' is the level taken out first, so it " +
+     "satisfies 'first' for the widest range of chart shapes; 'run extreme' is stricter. W17.")
+ccRequireColour = input.bool(true, "Trigger bar must be the opposite colour", group = G_CC,
+     tooltip = TT_SRC + "SRC-102 p.13 — 'GREEN trades above the high of a red bar'.")
+showCcLine = input.bool(true, "Draw the colour-change reference line", group = G_CC,
+     tooltip = TT_SRC + "SRC-105 p.13 — 'IGNORE THE TAILS. Use the BODY of the red bar when " +
+     "marking the level.' The line shows the body extreme, which is the detail the source says " +
+     "people get wrong.")
+
+// ── 10 · GAPS ─────────────────────────────────────────────────────────────────────────────────
+enableGapFill = input.bool(true, "Enable the gap-fill technique", group = G_GAP,
+     tooltip = TT_SRC + "SRC-120 p.13,30 (C19 / V2.7). Requires session information; disables " +
+     "itself automatically on symbols and timeframes without a regular session.")
+gapMinAtr = input.float(0.25, "Minimum gap size (ATR units)", minval = 0.0, maxval = 10.0,
+     step = 0.05, group = G_GAP, tooltip = TT_APPROX + "The source gives no minimum gap size.")
+
+// ── 11 · SPECIALISED SETUPS ───────────────────────────────────────────────────────────────────
+enSurge    = input.bool(true, "Surge off the 200 (V4)",                    group = G_SETUP)
+enSwing    = input.bool(true, "Igniting / pullback swings (V3)",           group = G_SETUP)
+enOpening  = input.bool(true, "Opening-bell sequence (V7)",                group = G_SETUP)
+enHidden   = input.bool(true, "Hidden green / hidden red (V7, V8)",        group = G_SETUP)
+enDual     = input.bool(true, "Dual space reversal (V6)",                  group = G_SETUP)
+enRetrace  = input.bool(true, "Retracement ladder + scalp/trade (V6)",     group = G_SETUP)
+enReversal = input.bool(true, "Deep drop / Market Law Four warnings (V1)", group = G_SETUP)
+clearLb = input.int(20, "Clear-space lookback (bars)", minval = 3, maxval = 300, group = G_SETUP,
+     tooltip = TT_APPROX + "SRC-192 p.37 — 'No significant price data IMMEDIATELY to the left ... " +
+     "He acknowledges that going back far enough always finds something. He means THE RECENT " +
+     "PAST.' TIMEFRAME-SENSITIVE: 20 bars on a monthly chart is 20 months. Worksheet W8.")
+originTolBars = input.int(2, "Surge origin tolerance (bars from the 200)", minval = 0, maxval = 20,
+     group = G_SETUP,
+     tooltip = TT_SRC + "ANCHORED (W20): SRC-195 p.38 — 'The move can start A BAR OR TWO away from the " +
+     "200 and still qualify.' One of the few counts the source actually supplies.")
+resetBars = input.int(3, "Reset / pause length (bars)", minval = 2, maxval = 30, group = G_SETUP,
+     tooltip = TT_APPROX + "SRC-201 p.38 — 'A BRIEF pause acts as a reset.' Worksheet W9.")
+resetDrift = input.float(1.0, "Reset maximum net drift (ATR units)", minval = 0.05, maxval = 10.0,
+     step = 0.05, group = G_SETUP,
+     tooltip = TT_APPROX + "Net displacement captures BOTH forms the source insists are " +
+     "equivalent — a sideways pause and a shallow drift. A range test would reject the drifting " +
+     "form. Worksheet W9.")
+dualSpaceMult = input.float(2.0, "Dual space: minimum price-to-20 distance (ATR)", minval = 0.1,
+     maxval = 20.0, step = 0.1, group = G_SETUP, tooltip = TT_APPROX + "SRC-228 p.45 (V6.2).")
+strongMoveAtr = input.float(3.0, "Retracement: minimum 'strong move' (ATR)", minval = 0.5,
+     maxval = 30.0, step = 0.1, group = G_SETUP,
+     tooltip = TT_APPROX + "SRC-258 — the odds 'require a GENUINELY STRONG, one-directional prior " +
+     "move'. Worksheet W16.")
+scalpTradePct = input.float(65.0, "Scalp/trade decision level (%)", minval = 50.0, maxval = 95.0,
+     step = 1.0, group = G_SETUP,
+     tooltip = TT_SRC + "ANCHORED: SRC-218/269 p.46 — 'Cleared 50% by a significant margin, " +
+     "TOWARD 65 OR 70%' converts a scalp into a trade. The only 'significant margin' the source " +
+     "ever quantifies.")
+deepDropPct = input.float(65.0, "Deep drop: retracement level (%)", minval = 50.0, maxval = 95.0,
+     step = 1.0, group = G_SETUP,
+     tooltip = TT_APPROX + "CROSS-CONTEXT ANCHOR: SRC-232 p.24 says a deep drop 'SEVERELY breaks' " +
+     "the 50% halfway point but never quantifies 'severely'. 65% is borrowed from the source's " +
+     "OWN V6.5 quantification of a significant break of the same 50% line (SRC-269). The source " +
+     "does NOT state 65% in the V1 context — the borrowing is this project's inference. W15.")
+mlfSignifMult = input.float(0.25, "Market Law Four: lower-top margin (ATR)", minval = 0.0,
+     maxval = 5.0, step = 0.05, group = G_SETUP,
+     tooltip = TT_APPROX + "SRC-233 p.25 — 'fails to make a SIGNIFICANT new high'. Not quantified.")
+openWindowBars = input.int(10, "Opening-bell window (bars from the open)", minval = 2, maxval = 60,
+     group = G_SETUP,
+     tooltip = TT_SRC + "SRC-212 p.52 — 'roughly 18 to 20 minutes', i.e. 10 bars on a 2-minute " +
+     "chart. The bar-count translation is this implementation's.")
+
+// ── 12 · ENTRY SIGNALS ────────────────────────────────────────────────────────────────────────
+near20Sel = input.string("ATR distance", "'Near the 20' model",
+     options = ["ATR distance", "Inside the 20's band"], group = G_ENTRY,
+     tooltip = TT_APPROX + "SRC-223 p.42 — 'A little above, a little below, or right on it are " +
+     "all fine. HE DOES NOT CARE WHICH.' The source states the condition and then declines to " +
+     "bound it. The band model is far stricter than the source's own p.42 diagram implies. W7.")
+near20Mult = input.float(0.75, "'Near the 20' distance (ATR units)", minval = 0.05, maxval = 10.0,
+     step = 0.05, group = G_ENTRY, tooltip = TT_APPROX + "Worksheet W7.")
+abProximity = input.int(10, "1A/1B proximity window (bars)", minval = 1, maxval = 100,
+     group = G_ENTRY,
+     tooltip = TT_APPROX + "ANCHORED to the source's own 8-12 bar average holding period " +
+     "(SRC-259 p.19) as the nearest notion of 'one trade's worth of bars'. SRC-127 p.34 only " +
+     "says 'close to' versus 'far apart'. Worksheet W19.")
+allowReversal = input.bool(false, "Allow immediate reversal into an opposite lifecycle",
+     group = G_ENTRY,
+     tooltip = TT_PLAT + "The source never addresses concurrency or reversal handling (SRC-300). " +
+     "The default is the conservative policy: finish or invalidate first.")
+
+// ── 13 · TRADE MANAGEMENT ─────────────────────────────────────────────────────────────────────
+stopSetSel = input.string("All eligible", "Trailing reference set",
+     options = ["All eligible", "Swing (pivot, big bar, MA)",
+                "Opening bell (fat bar, colour adjust)"], group = G_TRADE,
+     tooltip = TT_SRC + "SRC-150 p.14 names two sets: 'For swing trading ... pivot, big bar, " +
+     "moving average. For the opening bell it is fat bar, colour adjust.' The source does not " +
+     "say which set applies on other timeframes — 'All eligible' is a PLATFORM policy (PS-04).")
+pivLen = input.int(3, "Pivot length (left = right bars)", minval = 1, maxval = 30, group = G_TRADE,
+     tooltip = TT_APPROX + "NO SOURCE ANCHOR WHATSOEVER — the manual never defines a swing " +
+     "(SRC-144). Used uniformly for legs, pushes, retracement legs, reversal warnings and the " +
+     "pivot stop, so ONE notion of 'swing' governs the whole chart. Every pivot-derived object " +
+     "is CONFIRMED-LATER by construction and is tagged '[c]'. Worksheet W22.")
+accelLen = input.int(5, "Acceleration lookback (bars)", minval = 2, maxval = 50, group = G_TRADE,
+     tooltip = TT_APPROX + "SRC-145 — 'accelerates faster than the 20 can track'. W12.")
+accelMult = input.float(2.0, "Acceleration multiple versus the 20", minval = 1.0, maxval = 10.0,
+     step = 0.1, group = G_TRADE, tooltip = TT_APPROX + "Worksheet W12.")
+barByBarSpace = input.float(2.0, "Bar-by-bar trigger: price-to-20 distance (ATR)", minval = 0.1,
+     maxval = 20.0, step = 0.1, group = G_TRADE,
+     tooltip = TT_APPROX + "SRC-146 p.14,29 — 'once price has separated from the 20 and lost that " +
+     "support ... it is dangling in mid-air'. Worksheet W13.")
+swingStopSel = input.string("Whole sleepy base", "Igniting-swing stop reference",
+     options = ["Whole sleepy base", "Under the igniting bar"], group = G_TRADE,
+     tooltip = TT_SRC + "SRC-153 p.33 — BOTH are stated: 'Under the entire sleepy base and both " +
+     "averages, or tighter, just under the igniting bar itself.'")
+pullbackStopSel = input.string("Pullback low (the V)", "Pullback-swing stop reference",
+     options = ["Pullback low (the V)", "Pivot"], group = G_TRADE,
+     tooltip = TT_SRC + "SRC-154 p.33 — both are stated.")
+maxAdds = input.int(3, "Maximum adds per lifecycle", minval = 0, maxval = 10, group = G_TRADE,
+     tooltip = TT_PLAT + "The source calls adding MANDATORY (SRC-123) and permits continued adds " +
+     "near the 20 (SRC-126), but never caps them. This cap is a platform safeguard (PS-02).")
+maxLossPerUnit = input.float(0.0, "Maximum loss per unit (price; 0 = unset)", minval = 0.0,
+     group = G_TRADE,
+     tooltip = TT_SRC + "The stop ladder (SRC-151 p.38) needs YOUR maximum loss. The source " +
+     "requires one but supplies NO sizing mathematics at all (SRC-300, GAP ONE p.68). Left at 0, " +
+     "the ladder reports the base rung without a fit test and the Debug checklist shows UNSET.")
+
+// ── 14 · PROFIT MANAGEMENT ────────────────────────────────────────────────────────────────────
+push2Large = input.float(1.5, "Push two 'unusually large' multiple", minval = 1.0, maxval = 10.0,
+     step = 0.1, group = G_PROF,
+     tooltip = TT_APPROX + "SRC-171 p.16 — 'only if push two is UNUSUALLY LARGE and already looks " +
+     "like a third push'.")
+showPushes = input.bool(true, "Show push markers", group = G_PROF)
+showOdds = input.bool(true, "Show the retracement ladder", group = G_PROF,
+     tooltip = TT_SRC + "SRC-216 p.46. The LEVELS are computable. The hit rates shown beside them " +
+     "are the SOURCE'S OWN SELF-REPORTED CLAIMS, labelled as such. They are not this indicator's " +
+     "outputs and no probability is asserted by this script.")
+scalpTargetPct = input.float(25.0, "Scalp target (% of the prior move)", minval = 5.0, maxval = 90.0,
+     step = 1.0, group = G_PROF,
+     tooltip = TT_SRC + "ANCHORED: SRC-271 p.46 — 'Scalping is deliberately targeting the 25% " +
+     "zone.'")
+
+// ── 15 · VISUALS ──────────────────────────────────────────────────────────────────────────────
+showRibbon    = input.bool(true,  "State ribbon (top of pane)",   group = G_VIS)
+showBg        = input.bool(false, "State background tint",        group = G_VIS,
+     tooltip = TT_PLAT + "Off by default: a full-pane tint washes out candle colour, and the " +
+     "method reads bar colour directly (SRC-102). Opacity is capped. Disables the ribbon.")
+bgOpacity     = input.int(96, "Background transparency", minval = 88, maxval = 100, group = G_VIS)
+showZones     = input.bool(true,  "Position zone boxes (Analysis+)", group = G_VIS)
+showEvents    = input.bool(true,  "Event markers",                group = G_VIS)
+showLifecycle = input.bool(true,  "Virtual lifecycle objects",    group = G_VIS)
+colBullIn = input.color(#1B7F5A, "Bullish accent",       group = G_VIS)
+colBearIn = input.color(#A32B23, "Bearish accent",       group = G_VIS)
+colNeutIn = input.color(#5A6169, "Neutral / 20 SMA",     group = G_VIS)
+colDeepIn = input.color(#2B3138, "Structure / 200 SMA",  group = G_VIS)
+colWarnIn = input.color(#B7791F, "Warning",              group = G_VIS)
+
+// ── 16 · DASHBOARD ────────────────────────────────────────────────────────────────────────────
+showDash = input.bool(true, "Show dashboard", group = G_DASH)
+dashPosSel = input.string("Top right", "Dashboard position",
+     options = ["Top left", "Top center", "Top right", "Middle left", "Middle right",
+                "Bottom left", "Bottom center", "Bottom right"], group = G_DASH)
+dashSizeSel = input.string("Small", "Dashboard size", options = ["Tiny", "Small", "Normal"],
+     group = G_DASH)
+
+// ── 17 · ALERTS ───────────────────────────────────────────────────────────────────────────────
+alertModeSel = input.string("Confirmed (bar close)", "Alert confirmation",
+     options = ["Confirmed (bar close)", "Provisional (intrabar — may repaint)"], group = G_ALERT,
+     tooltip = TT_PLAT + "Confirmed is the default and the only non-repainting option. " +
+     "Provisional signals can appear and then vanish before the bar closes.")
+alertCooldown = input.int(3, "Alert cooldown (bars, per family)", minval = 0, maxval = 100,
+     group = G_ALERT, tooltip = TT_PLAT + "De-duplication. 0 disables the cooldown.")
+alEvents    = input.bool(true,  "Alerts: primitive events",                group = G_ALERT)
+alSetups    = input.bool(true,  "Alerts: specialised setups",              group = G_ALERT)
+alLifecycle = input.bool(true,  "Alerts: virtual lifecycle transitions",   group = G_ALERT)
+alContext   = input.bool(true,  "Alerts: state and exit context",          group = G_ALERT)
+alBlocked   = input.bool(false, "Alerts: blocked candidates (diagnostic)", group = G_ALERT)
+
+// ── 18 · ADVANCED (incl. experimental modules) ────────────────────────────────────────────────
+atrLen = input.int(20, "ATR length (normalisation unit)", minval = 2, maxval = 200, group = G_ADV,
+     tooltip = TT_APPROX + "Using ATR AT ALL is this implementation's addition — the source never " +
+     "mentions any volatility measure and instructs the reader not to measure. The LENGTH 20 is " +
+     "borrowed from the source's own short average purely to avoid an unrelated magic number. " +
+     "The borrowing does not make ATR source-supported.")
+spaceLookback = input.int(250, "Space rank lookback (bars)", minval = 20, maxval = 2000,
+     group = G_ADV,
+     tooltip = TT_APPROX + "SEMI-ANCHORED: SRC-221 p.41 establishes that space is judged against " +
+     "the instrument's OWN history ('larger than any space produced in the previous ten years'). " +
+     "The lookback and percentile are additions. Worksheet W14.")
+spacePct = input.float(90.0, "Space extreme percentile", minval = 50.0, maxval = 100.0, step = 1.0,
+     group = G_ADV, tooltip = TT_APPROX + "Worksheet W14.")
+useHtf = input.bool(false, "Use higher-timeframe 20-direction context", group = G_ADV,
+     tooltip = TT_SRC + "SRC-248 p.66 — the source's own pre-open checklist says 'Note the 20's " +
+     "direction on the higher timeframe'. OFF BY DEFAULT. Uses only CLOSED higher-timeframe bars " +
+     "with lookahead explicitly off, which costs up to one higher-timeframe bar of delay.")
+htfTf = input.timeframe("60", "Higher timeframe", group = G_ADV,
+     tooltip = TT_APPROX + "The source does not say WHICH higher timeframe.")
+allowProvisional = input.bool(false, "Show intrabar PROVISIONAL previews", group = G_ADV,
+     tooltip = TT_PLAT + "Off by default. Provisional marks never alert, never advance the " +
+     "lifecycle and never contribute to the confluence score. With this OFF, historical and " +
+     "real-time rendering of confirmed objects are identical.")
+expStateOn = input.bool(false, "EXPERIMENTAL: percentile-rank state model", group = G_ADV,
+     tooltip = TT_EXP + "A different state mathematics. Known artefact: it guarantees a fixed " +
+     "share of bars land in each bucket whether or not any genuinely do. That artefact is why " +
+     "it is experimental rather than the default. Worksheet W1.")
+expStateLb = input.int(500, "EXPERIMENTAL: state percentile lookback", minval = 50, maxval = 2000,
+     group = G_ADV, tooltip = TT_EXP)
+expDensityOn = input.bool(false, "EXPERIMENTAL: confluence density meter", group = G_ADV,
+     tooltip = TT_EXP + "A rolling count of supported events. Never gates anything.")
+expHtfGateOn = input.bool(false, "EXPERIMENTAL: higher-timeframe direction as a HARD GATE",
+     group = G_ADV,
+     tooltip = TT_EXP + "The source supports NOTING the higher-timeframe 20 direction (SRC-248); " +
+     "it does not support GATING on it. Requires 'Use higher-timeframe context' to be on.")
+
+// ── 19 · DEBUG ────────────────────────────────────────────────────────────────────────────────
+dbgOffset    = input.int(0, "Debug: inspected bar offset", minval = 0, maxval = 1000, group = G_DBG)
+showCheck    = input.bool(true, "Debug: live checklist",      group = G_DBG)
+showClaims   = input.bool(true, "Debug: source-claims panel", group = G_DBG)
+showCount    = input.bool(true, "Debug: resource counters",   group = G_DBG)
+showBlockers = input.bool(true, "Debug: blocking reasons",    group = G_DBG)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §02  RESOLVED SELECTORS
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+int fidelity = switch fidSel
+    "Strict source mechanics only"       => FID_STRICT
+    "Source + documented approximations" => FID_APPROX
+    => FID_EXPERIMENTAL
+
+int mode = switch modeSel
+    "Clean"      => MODE_CLEAN
+    "Analysis"   => MODE_ANALYSIS
+    "Full Velez" => MODE_FULL
+    => MODE_DEBUG
+
+bool useAtrBasis  = stateBasisSel == "ATR"
+bool useAtrPos    = posBasisSel   == "ATR"
+bool eleAvgModel  = eleModelSel   == "Average multiple"
+bool ccNearest    = ccRefSel      == "Nearest opposite bar"
+bool near20Atr    = near20Sel     == "ATR distance"
+bool alertConfirmedOnly = alertModeSel == "Confirmed (bar close)"
+
+bool expOn    = fidelity == FID_EXPERIMENTAL
+bool strictOn = fidelity == FID_STRICT
+
+// Experimental modules are inert unless BOTH the fidelity layer and the module toggle are on.
+bool expStateActive   = expOn and expStateOn
+bool expDensityActive = expOn and expDensityOn
+bool expHtfGateActive = expOn and expHtfGateOn and useHtf
+
+// Anti-clutter spacing tightens in denser modes (03_VISUAL_DESIGN_SPEC.md §6 R3/R6).
+int labelGap = mode == MODE_CLEAN ? math.max(minLabelGap, 8) : minLabelGap
+
+bool modeClean    = mode == MODE_CLEAN
+bool modeAnalysis = mode >= MODE_ANALYSIS
+bool modeFull     = mode >= MODE_FULL
+bool modeDebug    = mode == MODE_DEBUG
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §03  PURE HELPER FUNCTIONS
+//      [RULE-002 | PLATFORM_SAFEGUARD] Declared before first use; Pine has no forward references.
+//      None of these mutate global state — Pine functions cannot assign to globals.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// Safe division: returns na rather than erroring or producing an infinity.
+safeDiv(float n, float d) =>
+    na(d) or d == 0 ? float(na) : n / d
+
+// The approximation marker. ALWAYS ASCII — never an emoji, never colour-only.
+aMark(bool isApprox) =>
+    isApprox and showApproxMarks ? " ~" : ""
+
+// Confirmed-later marker (pivot-derived objects).
+cMark() =>
+    useEmoji ? " ⌛" : " [c]"
+
+// Virtual-lifecycle marker.
+vMark() =>
+    useEmoji ? " ⟨v⟩" : " (v)"
+
+// Rising edge. Called only from unconditional global scope, so per-call-site history is stable.
+rise(bool b) =>
+    b and not b[1]
+
+// Bit test on the blocker mask, using modulo (Pine integer division semantics are avoided).
+hasBit(int mask, int bit) =>
+    (mask % (bit * 2)) >= bit
+
+// Rotate a protective stop and report which method produced it.
+// Monotonic in the protective direction: the stop NEVER loosens.
+// [RULE-140 | CON-088 | SRC-148 p.14,35 | DIRECT / EXACT_TRANSLATION]
+applyStop(bool isLong, float cur, int curMethod, float cand, int candMethod) =>
+    float outStop   = cur
+    int   outMethod = curMethod
+    if not na(cand) and (na(cur) or (isLong ? cand > cur : cand < cur))
+        outStop   := cand
+        outMethod := candMethod
+    [outStop, outMethod]
+
+stateName(int s) =>
+    s == ST_NARROW ? "NARROW" : s == ST_REGULAR ? "REGULAR" : "WIDE"
+
+gradeName(int g) =>
+    g == NG_G1 ? "G1" : g == NG_G2 ? "G2" : g == NG_G3 ? "G3" : ""
+
+stopMethodName(int m) =>
+    switch m
+        SM_INITIAL  => "INITIAL"
+        SM_PIVOT    => "PIVOT"
+        SM_FATBAR   => "FAT BAR"
+        SM_COLOUR   => "COLOUR ADJUST"
+        SM_MA20     => "20 MA"
+        SM_MA8      => "8 MA"
+        SM_BARBYBAR => "BAR-BY-BAR"
+        => "-"
+
+lcName(int s) =>
+    switch s
+        LC_IDLE         => "IDLE"
+        LC_WATCHING     => "WATCHING"
+        LC_DEVELOPING   => "DEVELOPING"
+        LC_QUALIFIED    => "QUALIFIED"
+        LC_LONG_ACTIVE  => "VIRTUAL LONG ACTIVE"
+        LC_SHORT_ACTIVE => "VIRTUAL SHORT ACTIVE"
+        LC_EXIT_CONTEXT => "EXIT CONTEXT"
+        LC_INVALIDATED  => "INVALIDATED"
+        => "COMPLETED"
+
+// Confluence tier. [RULE-120 | CON-111 | IMPLEMENTATION-DEFINED — NOT a Velez taxonomy]
+tierName(int s) =>
+    s >= 13 ? "ELITE SETUP" : s >= 10 ? "HIGH QUALITY" : s >= 7 ? "SETUP" :
+     s >= 4 ? "DEVELOPING" : s >= 1 ? "WATCH" : "-"
+
+tierPips(int s) =>
+    s >= 13 ? "·····" : s >= 10 ? "····" : s >= 7 ? "···" : s >= 4 ? "··" : s >= 1 ? "·" : ""
+
+// Bounded ring-buffer trimming. Returns the number trimmed so the caller can accumulate it —
+// Pine functions cannot assign to globals. [RULE-208 | CON-119 | PLATFORM_SAFEGUARD PS-09]
+trimLabels(array<label> a, int cap) =>
+    int n = 0
+    if array.size(a) > cap
+        for i = 0 to array.size(a) - cap - 1
+            label.delete(array.shift(a))
+            n += 1
+    n
+
+trimLines(array<line> a, int cap) =>
+    int n = 0
+    if array.size(a) > cap
+        for i = 0 to array.size(a) - cap - 1
+            line.delete(array.shift(a))
+            n += 1
+    n
+
+trimBoxes(array<box> a, int cap) =>
+    int n = 0
+    if array.size(a) > cap
+        for i = 0 to array.size(a) - cap - 1
+            box.delete(array.shift(a))
+            n += 1
+    n
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §04  GUARDS AND BASE DATA
+//      [RULE-003..008 | CON-116/117 | PLATFORM_SAFEGUARD]
+//      Every guard produces a VISIBLE degraded state, never a silent one.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+float tick = syminfo.mintick * tickMult
+
+// [RULE-003 | CON-116 | PLATFORM_SAFEGUARD PS-10]
+// Heikin Ashi, Renko, Kagi, Point & Figure, Line Break and Range bars synthesise OHLC. Every
+// event detector here reads real bar geometry (SRC-092, SRC-096, SRC-102), so synthetic bars
+// distort them severely. Detection is NOT disabled — the user is informed and left in control.
+bool nonStandardChart = not chart.is_standard
+
+// [RULE-004] ATR is the normalisation unit for every distance in this script.
+float atrUnit = ta.atr(atrLen)
+float pctUnit = close * 0.01
+float unitState = useAtrBasis ? atrUnit : pctUnit
+bool  atrOk  = not na(atrUnit) and atrUnit > 0
+bool  unitOk = not na(unitState) and unitState > 0
+
+// [RULE-005 | CON-117 | PLATFORM_SAFEGUARD PS-08] Explicit, visible warm-up.
+// The 200 SMA is the source's non-negotiable second average (SRC-030 p.6), so a chart with fewer
+// than 200 bars cannot express the method at all. The dashboard says so rather than showing a
+// half-formed picture.
+int warmupNeeded = math.max(len200, slopeLen + 1, eleLookback + 1, atrLen + 1, clearLb + 1) + 2 +
+     (expStateOn ? expStateLb : 0)
+bool ready = bar_index >= warmupNeeded and atrOk and unitOk
+
+// [RULE-006] Bar geometry. Every ratio below is guarded against a zero range (PS-07).
+float rng    = high - low
+float body   = math.abs(close - open)
+float bodyHi = math.max(open, close)
+float bodyLo = math.min(open, close)
+float upTail = high - bodyHi
+float dnTail = bodyLo - low
+bool  rngOk  = rng > 0
+
+// [RULE-007 | CON-034 | SRC-102 p.13 | DIRECT / EXACT_TRANSLATION]
+// Two colours only. A doji is neither and is excluded as both a reference and a trigger — the
+// source never addresses dojis, so this is a platform safeguard (PS-06).
+bool isGreen = close > open
+bool isRed   = close < open
+bool isDoji  = close == open
+
+// [RULE-008 | PLATFORM_SAFEGUARD] Session availability. Opening-bell and gap-fill modules
+// disable themselves where no regular session exists (crypto/forex 24h, non-intraday charts).
+bool sessionOk  = timeframe.isintraday
+bool newSession = sessionOk and session.isfirstbar_regular
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §05  MOVING AVERAGES AND THE STATE ENVELOPE
+//      [RULE-009..013 | CON-001/002/003/004 | SRC-030/031/033/042 p.6-7 | DIRECT]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-009 | CON-001/002 | SRC-031 p.6,45 | DIRECT / EXACT_TRANSLATION]
+// "Both are simple moving averages calculated on closing prices." Length, type and input series
+// are all stated by the source, so this is a complete translation with nothing added.
+float sma20  = ta.sma(close, len20)
+float sma200 = ta.sma(close, len200)
+
+// [RULE-010 | CON-003 | SRC-033 p.6,29 | DIRECT / EXACT_TRANSLATION]
+// The 8 is a situational TRAILING tool, never an entry tool.
+float sma8 = ta.sma(close, len8)
+
+// [RULE-011 | CON-004 | SRC-042 p.7 + SRC-003 p.2 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// "A small penetration through either average is a lean, not a break ... he would shade a
+// coloured band on each side of the line." Concept stated twice; width never given. W3.
+float band    = bandMult * atrUnit
+float ma20Hi  = sma20  + band
+float ma20Lo  = sma20  - band
+float ma200Hi = sma200 + band
+float ma200Lo = sma200 - band
+
+// [RULE-012] The state envelope: the union of both bands. Position is measured from its edges.
+float stateTop = math.max(ma20Hi, ma200Hi)
+float stateBot = math.min(ma20Lo, ma200Lo)
+
+// [RULE-013 | CON-010 | SRC-023 p.5 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+float maGap = math.abs(sma20 - sma200)
+float gapN  = nz(safeDiv(maGap, unitState), 0.0)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §06  SLOPE, FLATNESS AND TREND
+//      [RULE-014..017 | CON-005/006/074 | SRC-035/036/040/055/224/225]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-014 | CON-005 | SRC-035/036 p.6-7 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// Per-bar slope normalised by the volatility unit. The source's only quantitative hint —
+// "ideally near 45 degrees" — is a chart-rendering artefact, not a property of the data, and is
+// deliberately NOT used to derive this threshold. Worksheet W2.
+slopeN(float s) =>
+    nz(safeDiv(s - s[slopeLen], slopeLen * unitState), 0.0)
+
+float slope20  = slopeN(sma20)
+float slope200 = slopeN(sma200)
+bool  flat20   = math.abs(slope20)  <= flatThresh
+bool  flat200  = math.abs(slope200) <= flatThresh
+
+// [RULE-015 | CON-011 | SRC-055 p.9,53 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// "the stock itself flat and SANDWICHED BETWEEN THEM" is a containment statement, not a slope
+// statement, and is implemented as containment within the current state envelope.
+bool priceSandwiched = ta.highest(close, slopeLen) <= stateTop and
+                       ta.lowest(close,  slopeLen) >= stateBot
+
+// [RULE-016 | CON-006 | SRC-040 p.7,45 (C7) + SRC-224 p.43 (V5.4) | DIRECT / APPROXIMATION]
+// "If the 20 is declining, the trend is down no matter how many green bars print inside it."
+int trendDir = slope20 > flatThresh ? DIR_LONG : slope20 < -flatThresh ? DIR_SHORT : DIR_NONE
+
+// [RULE-017 | CON-074 | SRC-225 p.43 | DIRECT / EXACT_TRANSLATION]
+// The screening method applied to the charted symbol: rising 20 = long only, declining 20 =
+// short only, neither rising nor declining = DISCARD.
+bool trendFlat = trendDir == DIR_NONE
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §07  SPACE (PRICE <-> THE 20)
+//      [RULE-018..020 | CON-071/073 | SRC-220/221/322 p.41-43,60]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-018 | CON-071 | SRC-322 p.60 | DIRECT / EXACT_TRANSLATION]
+// The glossary binds "space" explicitly to price <-> the 20, not price <-> the 200.
+float spaceAbs = math.abs(close - sma20)
+float spaceN   = nz(safeDiv(spaceAbs, unitState), 0.0)
+
+// [RULE-019 | CON-073 | SRC-221 p.41 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// The source judges space against the instrument's OWN history ("larger than any space produced
+// in the previous ten years"). Lookback and percentile are additions. Worksheet W14.
+float spaceRank    = ta.percentrank(spaceAbs, spaceLookback)
+bool  spaceExtreme = not na(spaceRank) and spaceRank >= spacePct
+
+// [RULE-020 | CON-041/044 | SRC-223 p.42 | DIRECT condition / PROGRAMMABLE_APPROXIMATION]
+// "A little above, a little below, or right on it are all fine. HE DOES NOT CARE WHICH." W7.
+bool near20 = near20Atr ? (spaceN <= near20Mult) : (close <= ma20Hi and close >= ma20Lo)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §08  SWINGS: PIVOTS AND RESETS
+//      [RULE-021..022 | CON-055 | SRC-144/201]
+//      REPAINT CLASS: CONFIRMED-LATER. Objects derived from these are drawn ONLY on the
+//      confirmation bar and are tagged "[c]". No pivot is ever backdated without that tag.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-021 | CON-055 | SRC-144 p.14 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// The manual never defines a swing; pivLen has NO source anchor. Worksheet W22.
+float pivHiRaw = ta.pivothigh(high, pivLen, pivLen)
+float pivLoRaw = ta.pivotlow(low,  pivLen, pivLen)
+bool  pivHiConfirmed = not na(pivHiRaw)
+bool  pivLoConfirmed = not na(pivLoRaw)
+
+var float lastPivHi    = na
+var float prevPivHi    = na
+var float lastPivLo    = na
+var float prevPivLo    = na
+var int   lastPivHiBar = na
+var int   lastPivLoBar = na
+
+if pivHiConfirmed
+    prevPivHi    := lastPivHi
+    lastPivHi    := pivHiRaw
+    lastPivHiBar := bar_index - pivLen
+if pivLoConfirmed
+    prevPivLo    := lastPivLo
+    lastPivLo    := pivLoRaw
+    lastPivLoBar := bar_index - pivLen
+
+// [RULE-022 | CON-055 | SRC-201 p.38 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// "A brief pause acts as a reset ... sideways OR a shallow drift down at roughly 45 degrees. He
+// is explicit that BOTH FORMS accomplish the same thing." Net displacement captures both; a
+// range test would reject the drifting form the source insists is equivalent. Worksheet W9.
+float netDrift = math.abs(close - close[resetBars])
+bool  isReset  = ready and nz(safeDiv(netDrift, unitState), SENTINEL_BIG) <= resetDrift
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §09  STATE CLASSIFICATION
+//      [RULE-027..034 | CON-010..019 | SRC-050..064]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-027 | CON-010 | SRC-050/051/060 p.8-9 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// SRC-051: "Velez is emphatic that this is an EYEBALL judgement and warns against measuring the
+// gap with a tool." The source does not merely omit a threshold — it instructs against creating
+// one. Every state value rendered therefore carries "~". Worksheet W1.
+int stateDefault = not ready ? ST_REGULAR :
+     gapN <= narrowMult ? ST_NARROW : gapN >= wideMult ? ST_WIDE : ST_REGULAR
+
+// [RULE-103 | CON-130 | EXPERIMENTAL — NOT FROM THE SOURCE]
+// Percentile-rank state model. Known artefact: it guarantees a fixed share of bars land in each
+// bucket whether or not any genuinely do. That is exactly why it is experimental, not default.
+// ta.* is called UNCONDITIONALLY: calling a series function inside a ternary can desynchronise
+// its internal state. Only the USE of the result is gated. (PLATFORM_SAFEGUARD)
+float expGapRank = ta.percentrank(gapN, expStateLb)
+int   stateExp   = na(expGapRank) ? stateDefault :
+     expGapRank <= EXP_NARROW_PCT ? ST_NARROW : expGapRank >= EXP_WIDE_PCT ? ST_WIDE : ST_REGULAR
+
+int state = expStateActive ? stateExp : stateDefault
+
+bool isNarrow  = state == ST_NARROW
+bool isRegular = state == ST_REGULAR
+bool isWide    = state == ST_WIDE
+
+// [RULE-028 | CON-011/012/013 | SRC-055/056/057 p.9,53 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// The three grades, ranked by the source. G1 requires ALL THREE items flat at once.
+int narrowGrade = not isNarrow ? NG_NONE :
+     (flat20 and flat200 and priceSandwiched) ? NG_G1 :
+     (flat200 and not flat20)                 ? NG_G2 : NG_G3
+
+// [RULE-029 | CON-016 | SRC-207 p.33 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// "All three items flat and sideways at the same time ... NOT TWO OF THREE."
+bool sleepyNow = narrowGrade == NG_G1
+var int sleepyRun = 0
+sleepyRun := sleepyNow ? nz(sleepyRun[1]) + 1 : 0
+bool isSleepy = sleepyRun >= sleepyBars
+
+// [RULE-030 | CON-017 | SRC-198 p.39 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+bool isMerge = ready and gapN <= mergeMult
+
+// [RULE-031 | CON-010] State transition.
+bool stateChanged = ready and state != state[1]
+
+// [RULE-032 | CON-019 | SRC-064 p.48 | DIRECT / EXACT_TRANSLATION]
+// "State ... narrow or wide. Location ... above or below." The source draws this distinction
+// deliberately and warns the two are conflated. They are separate fields here and on the dashboard.
+int location = close > stateTop ? DIR_LONG : close < stateBot ? DIR_SHORT : DIR_NONE
+
+// [RULE-033 | CON-015 | SRC-061/063 p.9,28,54 | DIRECT / EXACT_TRANSLATION]
+string modeByState = isNarrow ? "EMERGENCE" : isRegular ? "NEAR THE 20" : "REVERSION"
+
+// [RULE-034 | CON-055] Leg counting, reset on a return to narrow.
+var int legCount = 0
+if stateChanged and isNarrow
+    legCount := 0
+if ready and isReset and not isReset[1] and legCount < 20
+    legCount := legCount + 1
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §10  POSITION CLASSIFICATION
+//      [RULE-035..042 | CON-020..029 | SRC-070..079]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-035 | CON-020 | SRC-070/071 p.10 | DIRECT structure / PROGRAMMABLE_APPROXIMATION]
+// Seven positions: three above, three below, and the state itself. The ladder STRUCTURE is
+// direct; the boundaries are only ever described in words. Worksheet W4.
+float posUnit = useAtrPos ? atrUnit : math.max(maGap, atrUnit * 0.1)
+float dUp = nz(safeDiv(close - stateTop, posUnit), 0.0)
+float dDn = nz(safeDiv(stateBot - close, posUnit), 0.0)
+
+int pos = not ready ? 0 :
+     close > stateTop ? (dUp <= p1Max ? 1 : dUp <= p2Max ? 2 : 3) :
+     close < stateBot ? (dDn <= p1Max ? -1 : dDn <= p2Max ? -2 : -3) : 0
+int posAbs = math.abs(pos)
+
+// [RULE-036 | CON-022 | SRC-075 p.10 | DIRECT / EXACT_TRANSLATION]
+// "The state — Do not trade inside it. Wait for the emergence."
+bool insideState = pos == 0
+
+// [RULE-037 | CON-023/025 | SRC-079 p.11 + SRC-284 p.56 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// Pluto land: "the zone far past position one where traders chase bars that have nothing to do
+// with the state that produced them. The bar is not the signal. The bar PLUS THE LOCATION is."
+bool plutoLand = posAbs == 3
+
+// [RULE-038/039 | CON-026/027 | SRC-209/323 p.34-35,60 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+bool inBox        = ready and gapN <= boxGapMult and spaceN <= boxPriceMult
+bool threeFingers = ready and gapN >  boxGapMult and spaceN >  boxPriceMult
+
+// [RULE-041] Position path progression 1 -> 2 -> 3 (SRC-129 p.30,55).
+var int posPathMax = 0
+posPathMax := posAbs > nz(posPathMax[1]) ? posAbs : nz(posPathMax[1])
+
+// [RULE-042 | CON-070 | SRC-239/325 p.25,61 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+bool ma20Halt = ready and near20 and near20[1] and near20[2] and rngOk and rng <= atrUnit
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §11  PRIMITIVE EVENT DETECTORS
+//      [RULE-055..079 | CON-030..039 | SRC-090..109]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── Elephant bar ────────────────────────────────────────────────────────────────────────────
+// [RULE-055 | CON-030 | SRC-092 p.12 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// "A bar visibly larger and taller than the bars around it, in either colour." No ratio, no
+// neighbourhood size, and no separation of range from body is given anywhere. Worksheet W5.
+float avgRng = ta.sma(rng, eleLookback)[1]
+float maxRng = ta.highest(rng, eleLookback)[1]
+bool  bodyOk = rngOk and nz(safeDiv(body, rng), 0.0) >= eleBodyFrac
+
+bool eleSizeOk = eleAvgModel ?
+     (not na(avgRng) and avgRng > 0 and rng >= eleRangeMult * avgRng) :
+     (not na(maxRng) and rng > maxRng and rng >= atrUnit)
+
+bool isElephant   = ready and rngOk and eleSizeOk and bodyOk
+bool elephantBull = isElephant and isGreen
+bool elephantBear = isElephant and isRed
+
+// [RULE-056 | CON-031 | SRC-235 p.26 | DIRECT rule / PROGRAMMABLE_APPROXIMATION]
+// "Nothing about the candle itself tells you which one you are looking at. Only its LOCATION in
+// the trend does." The source's two illustrations differ on THREE dimensions at once — legs,
+// what is overhead, and distance from the state — so a single-dimension test would misclassify
+// the very examples the manual uses. UNCLASSIFIED is a deliberate, visible third outcome. W18.
+bool narrowRecently = nz(ta.barssince(isNarrow), SENTINEL_BARS) <= emergenceLb
+bool isExhaustion = isElephant and (legCount >= exhaustLegs or plutoLand or spaceExtreme)
+bool isIgniting   = isElephant and not isExhaustion and legCount <= 1 and posAbs <= 2 and
+                    narrowRecently
+
+// ── Tail bars ───────────────────────────────────────────────────────────────────────────────
+// [RULE-057 | CON-032 | SRC-096/098 p.12 | DIRECT / PROGRAMMABLE_APPROXIMATION on the ratio]
+// "MOST of the bar must be tail. The body is the small part. A bar that is mostly body with a
+// wick hanging off it is not a tail bar." Worksheet W6.
+float tailUpFrac = nz(safeDiv(upTail, rng), 0.0)
+float tailDnFrac = nz(safeDiv(dnTail, rng), 0.0)
+float bodyFrac   = nz(safeDiv(body,   rng), 1.0)
+
+bool bottomingTail = ready and rngOk and tailDnFrac >= tailMinFrac and bodyFrac <= tailBodyMax and
+                     (not tailDominance or dnTail > upTail)
+bool toppingTail   = ready and rngOk and tailUpFrac >= tailMinFrac and bodyFrac <= tailBodyMax and
+                     (not tailDominance or upTail > dnTail)
+bool isTail = bottomingTail or toppingTail
+
+// [RULE-058 | CON-033 | SRC-097 p.12 | DIRECT / EXACT_TRANSLATION]
+// The snowman: "a bar with a wick that people mistake for a tail bar. Most of the bar is body,
+// so it does not qualify." Debug only — it makes the boundary inspectable rather than invisible.
+bool isSnowman = ready and rngOk and bodyFrac > SNOWMAN_MIN_BODY and
+                 math.max(tailUpFrac, tailDnFrac) >= SNOWMAN_MIN_WICK
+
+// ── Colour change ───────────────────────────────────────────────────────────────────────────
+// [RULE-059 | CON-034 | SRC-102/104/105/106 p.13 | DIRECT / EXACT_TRANSLATION]
+// "One colour takes out the high of an opposite-coloured bar next to it ... It does not need to
+// be back to back ... IGNORE THE TAILS. USE THE BODY of the red bar when marking the level ...
+// The entry price is the takeout price, ONE TICK ABOVE the marked high."
+// WHICH opposite bar supplies the level when several print is not stated — Worksheet W17.
+var float ccRefHi    = na
+var float ccRefLo    = na
+var float ccRunHi    = na
+var float ccRunLo    = na
+var int   ccRefHiBar = na
+var int   ccRefLoBar = na
+
+if isRed
+    ccRunHi    := (na(ccRunHi) or not isRed[1]) ? bodyHi : math.max(ccRunHi, bodyHi)
+    ccRefHi    := ccNearest ? bodyHi : ccRunHi
+    ccRefHiBar := bar_index
+if isGreen
+    ccRunLo    := (na(ccRunLo) or not isGreen[1]) ? bodyLo : math.min(ccRunLo, bodyLo)
+    ccRefLo    := ccNearest ? bodyLo : ccRunLo
+    ccRefLoBar := bar_index
+
+// [SAME-BAR POLICY S10] The reference used on this bar is the one that existed at the PREVIOUS
+// bar's close, so a bar can never take out its own reference.
+float ccUseHi = ccRefHi[1]
+float ccUseLo = ccRefLo[1]
+
+bool ccBull = ready and not na(ccUseHi) and (not ccRequireColour or isGreen) and not isDoji and
+              high >= ccUseHi + tick
+bool ccBear = ready and not na(ccUseLo) and (not ccRequireColour or isRed) and not isDoji and
+              low  <= ccUseLo - tick
+bool isColourChange = ccBull or ccBear
+
+float ccEntryLong  = na(ccUseHi) ? float(na) : ccUseHi + tick
+float ccEntryShort = na(ccUseLo) ? float(na) : ccUseLo - tick
+
+// [RULE-060 | CON-035 | SRC-107 p.13,29,55 | DIRECT / EXACT_TRANSLATION]
+// "If a single bar is both an elephant bar and a colour change at once, Velez rates it MORE
+// POWERFUL than either alone."
+bool comboBull = elephantBull and ccBull
+bool comboBear = elephantBear and ccBear
+
+// ── Little red / green bar takeout ──────────────────────────────────────────────────────────
+// [RULE-061 | CON-036 | SRC-132/133 p.50 | DIRECT / EXACT_TRANSLATION]
+// "Watch the very first red bar after entry. If that red bar does not produce a second
+// consecutive red, and a green bar then trades one penny above the red bar's high, that is the
+// add." SRC-133 promotes it: "the little red bar takeout can be an ENTRY in its own right."
+bool takeoutBull = ready and isRed[2]   and not isRed[1]   and isGreen and high >= high[2] + tick
+bool takeoutBear = ready and isGreen[2] and not isGreen[1] and isRed   and low  <= low[2]  - tick
+bool isTakeout   = takeoutBull or takeoutBear
+
+// ── Gap fill ────────────────────────────────────────────────────────────────────────────────
+// [RULE-062 | CON-037 | SRC-120 p.13,30 | DIRECT / EXACT_TRANSLATION]
+// "When a stock gaps out of a narrow state, mentally fill the gap in as if price had traded
+// through it continuously. That turns the gap itself into the elephant bar one, so the first
+// real bar of continued green becomes your bar two trigger."
+var bool gapArmedUp = false
+var bool gapArmedDn = false
+var int  gapBar     = na
+
+float gapUpSize = open - high[1]
+float gapDnSize = low[1] - open
+bool gapUp = enableGapFill and newSession and ready and gapUpSize > 0 and
+             nz(safeDiv(gapUpSize, unitState), 0.0) >= gapMinAtr
+bool gapDn = enableGapFill and newSession and ready and gapDnSize > 0 and
+             nz(safeDiv(gapDnSize, unitState), 0.0) >= gapMinAtr
+
+// [RULE-063 | CON-038 | SRC-121 p.13,52 | DIRECT / EXACT_TRANSLATION]
+// "if the gap is so large that you are already opening in a wide state, THE SETUP IS GONE."
+bool gapTooLarge = (gapUp or gapDn) and isWide
+
+if newSession
+    gapArmedUp := gapUp and state[1] == ST_NARROW and not gapTooLarge
+    gapArmedDn := gapDn and state[1] == ST_NARROW and not gapTooLarge
+    gapBar     := bar_index
+
+// The gap acts as "bar one"; the first subsequent bar continuing in the gap direction is the
+// bar-two trigger.
+bool gapTriggerUp = gapArmedUp and not newSession and isGreen
+bool gapTriggerDn = gapArmedDn and not newSession and isRed
+if gapTriggerUp
+    gapArmedUp := false
+if gapTriggerDn
+    gapArmedDn := false
+
+// ── Top event candidate for this bar (same-bar priority, policy S5) ──────────────────────────
+// [RULE-064 | 03_VISUAL_DESIGN_SPEC.md §6 R2 | PLATFORM_SAFEGUARD]
+EventCandidate ev = EventCandidate.new()
+
+if comboBull
+    ev := EventCandidate.new(EV_COMBO, DIR_LONG, ccEntryLong, "ELEPHANT + CHANGE", true)
+else if comboBear
+    ev := EventCandidate.new(EV_COMBO, DIR_SHORT, ccEntryShort, "ELEPHANT + CHANGE", true)
+else if elephantBull
+    ev := EventCandidate.new(EV_ELEPHANT, DIR_LONG, high + tick,
+         isIgniting ? "IGNITING ELEPHANT" : isExhaustion ? "EXHAUSTION ELEPHANT" : "ELEPHANT", true)
+else if elephantBear
+    ev := EventCandidate.new(EV_ELEPHANT, DIR_SHORT, low - tick,
+         isIgniting ? "IGNITING ELEPHANT" : isExhaustion ? "EXHAUSTION ELEPHANT" : "ELEPHANT", true)
+else if bottomingTail
+    ev := EventCandidate.new(EV_TAIL, DIR_LONG, high + tick, "BOTTOMING TAIL", true)
+else if toppingTail
+    ev := EventCandidate.new(EV_TAIL, DIR_SHORT, low - tick, "TOPPING TAIL", true)
+else if ccBull
+    ev := EventCandidate.new(EV_COLOUR, DIR_LONG, ccEntryLong, "COLOUR CHANGE", false)
+else if ccBear
+    ev := EventCandidate.new(EV_COLOUR, DIR_SHORT, ccEntryShort, "COLOUR CHANGE", false)
+else if takeoutBull
+    ev := EventCandidate.new(EV_TAKEOUT, DIR_LONG, high[2] + tick, "RED BAR TAKEOUT", false)
+else if takeoutBear
+    ev := EventCandidate.new(EV_TAKEOUT, DIR_SHORT, low[2] - tick, "GREEN BAR TAKEOUT", false)
+
+bool anyEvent = ev.rank != EV_NONE
+int  candDir  = ev.dir
+
+// [RULE-065 | SAME-BAR POLICY S6] Conflicting long and short qualifying events on one bar.
+bool conflictingEvents = (comboBull or elephantBull or bottomingTail or ccBull or takeoutBull) and
+                         (comboBear or elephantBear or toppingTail or ccBear or takeoutBear)
+
+// [RULE-066 | FIDELITY LAYER 1] In STRICT fidelity only events whose TRIGGER is fully specified
+// by the source may open a lifecycle. The elephant detector needs an invented size multiple, so
+// elephant-driven entries are excluded there; the bar is still drawn as context.
+bool evEntryEligible = strictOn ?
+     (ev.rank == EV_COLOUR or ev.rank == EV_TAKEOUT or ev.rank == EV_TAIL) : anyEvent
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §12  SPECIALISED SETUPS
+//      [RULE-080..109 | CON-050..079 | SRC-190..239]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── Clear blue skies to the left, and the purge ─────────────────────────────────────────────
+// [RULE-080 | CON-051 | SRC-192/324 p.37,59 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// "No significant price data immediately to the left of the surge, SO NOTHING FOR PRICE TO
+// OVERCOME." The glossary's statement of purpose constrains the proxy. Worksheet W8.
+float leftHigh = ta.highest(high, clearLb)[1]
+float leftLow  = ta.lowest(low,   clearLb)[1]
+bool clearLeftLong  = ready and not na(leftHigh) and close > leftHigh
+bool clearLeftShort = ready and not na(leftLow)  and close < leftLow
+
+// [RULE-081 | CON-052 | SRC-198 p.39 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// "The purge. A move that clears out every nearby price to the left IN ONE MOTION."
+bool purgeLong  = clearLeftLong  and low  <= leftHigh
+bool purgeShort = clearLeftShort and high >= leftLow
+
+// ── Surge off the 200 ───────────────────────────────────────────────────────────────────────
+// [RULE-082 | CON-050 | SRC-190/191/195/196 p.37-38 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// (1) a strong surge, often a large-bodied elephant bar, (2) originating at or very near a FLAT
+// 200, (3) with clear blue skies to the left, and critically (4) "A surge is NOT ALWAYS an
+// elephant bar ... A BOTTOMING TAIL BAR IS ALSO A SURGE" — the costume rule (SRC-196).
+bool touched200    = low <= ma200Hi and high >= ma200Lo
+bool originNear200 = nz(ta.barssince(touched200), SENTINEL_BARS) <= originTolBars
+
+bool surgeBodyLong  = elephantBull or bottomingTail
+bool surgeBodyShort = elephantBear or toppingTail
+
+bool surgeLong  = enSurge and ready and flat200 and surgeBodyLong  and originNear200 and
+                  clearLeftLong  and trendDir != DIR_SHORT
+bool surgeShort = enSurge and ready and flat200 and surgeBodyShort and originNear200 and
+                  clearLeftShort and trendDir != DIR_LONG
+bool isSurge = surgeLong or surgeShort
+
+// [RULE-083 | CON-053 | SRC-199 p.39 | DIRECT / EXACT_TRANSLATION]
+// "All three together is the strongest version of the setup." merge + purge + surge.
+bool mergePurgeSurge = isSurge and isMerge and (surgeLong ? purgeLong : purgeShort)
+
+// ── The stop ladder on the trigger bar ──────────────────────────────────────────────────────
+// [RULE-084 | CON-054 | SRC-151/197 p.38 | DIRECT / EXACT_TRANSLATION]
+// "Ideally under the entire move, under the low of the origin ... If it does [exceed max loss],
+// move the stop up, but IT MUST STAY IN THE BOTTOM THIRD of the triggering bar. Higher than that
+// and it is not your trade." THERE IS NO FOURTH OPTION.
+float thirdLong     = low  + rng / 3.0
+float thirdShort    = high - rng / 3.0
+float baseStopLong  = low  - tick
+float baseStopShort = high + tick
+float ladderEntryL  = high + tick
+float ladderEntryS  = low  - tick
+
+bool lossSet = maxLossPerUnit > 0
+int ladderRungLong = not lossSet ? 1 :
+     (ladderEntryL - baseStopLong) <= maxLossPerUnit ? 1 :
+     (ladderEntryL - thirdLong)    <= maxLossPerUnit ? 2 : 3
+int ladderRungShort = not lossSet ? 1 :
+     (baseStopShort - ladderEntryS) <= maxLossPerUnit ? 1 :
+     (thirdShort    - ladderEntryS) <= maxLossPerUnit ? 2 : 3
+
+// ── Swing setups ────────────────────────────────────────────────────────────────────────────
+// [RULE-085 | CON-057 | SRC-205/207 p.33 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// "An explosive move out of a sleepy state. Can ignite off either the 20 or the 200." The source
+// "prefers an elephant-sized bar rather than a regular bar to confirm you are genuinely out of it".
+bool sleepyPrev  = isSleepy[1]
+bool igniteLong  = enSwing and ready and sleepyPrev and elephantBull and close > stateTop
+bool igniteShort = enSwing and ready and sleepyPrev and elephantBear and close < stateBot
+bool isIgnite    = igniteLong or igniteShort
+
+var int lastIgniteBar = na
+if isIgnite
+    lastIgniteBar := bar_index
+
+// [RULE-086 | CON-058 | SRC-206/208 p.33 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// "A colour change at or near the 20 ... The best combination: a pullback that occurs AFTER an
+// igniting move. Igniting first, pullback second, is the highest-quality pairing."
+bool pullbackLong  = enSwing and ready and ccBull and near20
+bool pullbackShort = enSwing and ready and ccBear and near20
+bool isPullback    = pullbackLong or pullbackShort
+
+// [RULE-087 | CON-045 | SRC-127 p.34 | DIRECT rule / PROGRAMMABLE_APPROXIMATION]
+// "If the pullback happens CLOSE TO the igniting move, take both and treat the second as an ADD,
+// labelled 1A and 1B. If they are FAR APART, treat them as trade one and trade two." W19.
+bool pullbackFollowsIgnite = isPullback and not na(lastIgniteBar) and
+                             (bar_index - lastIgniteBar) <= abProximity
+
+// ── Opening-bell sequence ───────────────────────────────────────────────────────────────────
+// [RULE-088..092 | CON-059 | SRC-210 p.49 | DIRECT / EXACT_TRANSLATION]
+// (4) Let the first bar complete — NO ACTION during bar one. (5) Mark one penny above bar one's
+// high. (6) Enter the instant price crosses that mark — if bar two does not cross it, whichever
+// later bar does gets the entry. (7) Stop one penny below bar one's low.
+var float bar1Hi      = na
+var float bar1Lo      = na
+var int   bar1Bar     = na
+var bool  obArmedL    = false
+var bool  obArmedS    = false
+var bool  obTriggered = false
+
+// Bar one must open OUTSIDE a narrow state with a qualifying power bar (SRC-210 step 2).
+bool obQualLong  = enOpening and newSession and ready and state[1] == ST_NARROW and
+                   open > stateTop and (elephantBull or bottomingTail)
+bool obQualShort = enOpening and newSession and ready and state[1] == ST_NARROW and
+                   open < stateBot and (elephantBear or toppingTail)
+
+if newSession
+    bar1Hi      := high
+    bar1Lo      := low
+    bar1Bar     := bar_index
+    obArmedL    := obQualLong  and not gapTooLarge
+    obArmedS    := obQualShort and not gapTooLarge
+    obTriggered := false
+
+int  obBarsIn     = na(bar1Bar) ? 0 : bar_index - bar1Bar
+bool obWindowOpen = obBarsIn >= 1 and obBarsIn <= openWindowBars
+
+float obMarkLong  = na(bar1Hi) ? float(na) : bar1Hi + tick
+float obMarkShort = na(bar1Lo) ? float(na) : bar1Lo - tick
+bool  obEntryLong  = obArmedL and not obTriggered and obWindowOpen and high >= obMarkLong
+bool  obEntryShort = obArmedS and not obTriggered and obWindowOpen and low  <= obMarkShort
+if obEntryLong or obEntryShort
+    obTriggered := true
+
+// [RULE-091 | CON-090/077 | SRC-155/327 p.49,60 | DIRECT / EXACT_TRANSLATION]
+// "Stop goes one penny below the low of bar one." The professional loss: one bar of adverse
+// movement. This is the source's explicitly named exception (SRC-078 p.11) to C14.
+float obStopLong  = na(bar1Lo) ? float(na) : bar1Lo - tick
+float obStopShort = na(bar1Hi) ? float(na) : bar1Hi + tick
+
+// ── Hidden green / hidden red ───────────────────────────────────────────────────────────────
+// [RULE-093 | CON-060 | SRC-213 p.51 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// "the first bar of the day opens BELOW a narrow state and starts printing GREEN, which is the
+// WRONG COLOUR for the location ... mark the low of that green ... The moment that green is
+// fully erased by red, WHETHER INSIDE THE SAME BAR OR ON A LATER BAR, that erasure point becomes
+// the entry."
+// LIMITATION, STATED RATHER THAN HIDDEN: the intrabar erasure instant is unobservable at bar
+// close and any intrabar proxy would repaint. Only the BAR-CLOSE form is implemented. The
+// implemented trigger is therefore A DIFFERENT EVENT from the one the source teaches, and will
+// usually sit at a worse reference. Worksheet W21.
+var bool  hgArmed   = false
+var bool  hrArmed   = false
+var float hgRefLow  = na
+var float hrRefHigh = na
+
+if newSession
+    hgArmed   := enHidden and ready and state[1] == ST_NARROW and open < stateBot and isGreen
+    hrArmed   := enHidden and ready and state[1] == ST_NARROW and open > stateTop and isRed
+    hgRefLow  := hgArmed ? low  : float(na)
+    hrRefHigh := hrArmed ? high : float(na)
+
+bool hiddenGreenShort = hgArmed and not newSession and isRed   and close < hgRefLow
+bool hiddenRedLong    = hrArmed and not newSession and isGreen and close > hrRefHigh
+if hiddenGreenShort
+    hgArmed := false
+if hiddenRedLong
+    hrArmed := false
+
+// ── Dual space reversal ─────────────────────────────────────────────────────────────────────
+// [RULE-094 | CON-061 | SRC-228 p.45 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// "price, the 20 and the 200 were all separated from each other. Two layers of space at once ...
+// The trade: short once green gets eliminated by red, stop above the recent green, TARGET THE
+// GAP CLOSING BACK TO THE 20."
+bool dualSpaceArmed = enDual and ready and spaceN >= dualSpaceMult and gapN >= wideMult
+bool dualShort = dualSpaceArmed and close > sma20 and ccBear
+bool dualLong  = dualSpaceArmed and close < sma20 and ccBull
+bool isDual    = dualShort or dualLong
+
+// ── Retracement ladder and the scalp/trade decision ─────────────────────────────────────────
+// [RULE-095..098 | CON-062/063/064/065 | SRC-216/218/269/271 p.46]
+// REPAINT CLASS: CONFIRMED-LATER (pivot-derived legs).
+var float legHi     = na
+var float legLo     = na
+var bool  legIsDown = false
+
+if (pivHiConfirmed or pivLoConfirmed) and not na(lastPivHi) and not na(lastPivLo)
+    legHi     := lastPivHi
+    legLo     := lastPivLo
+    legIsDown := lastPivHiBar < lastPivLoBar
+
+float legSize   = (na(legHi) or na(legLo)) ? float(na) : legHi - legLo
+bool  legStrong = enRetrace and not na(legSize) and legSize > 0 and
+                  nz(safeDiv(legSize, unitState), 0.0) >= strongMoveAtr
+
+// The LEVELS are computable from the source's own percentages. The hit rates the source attaches
+// to them are its own self-reported claims and are never asserted by this indicator.
+float ret25  = na(legSize) ? float(na) :
+     legIsDown ? legLo + RET_25 * legSize : legHi - RET_25 * legSize
+float ret50  = na(legSize) ? float(na) :
+     legIsDown ? legLo + RET_50 * legSize : legHi - RET_50 * legSize
+float ret75  = na(legSize) ? float(na) :
+     legIsDown ? legLo + RET_75 * legSize : legHi - RET_75 * legSize
+float ret100 = na(legSize) ? float(na) : legIsDown ? legHi : legLo
+
+// [RULE-098 | CON-064 | SRC-218/269 p.46 | DIRECT / EXACT_TRANSLATION]
+// "Failed to clear the 50% mark -> the odds strongly favour a new low. Treat it as continuation
+// ... Cleared 50% by a significant margin, toward 65 or 70% -> the next pullback becomes a
+// higher-conviction TRADE rather than a scalp."
+float bouncePct = (na(legSize) or legSize <= 0) ? float(na) :
+     legIsDown ? nz(safeDiv(high - legLo, legSize), 0.0) * 100.0 :
+                 nz(safeDiv(legHi - low,  legSize), 0.0) * 100.0
+string scalpVerdict = na(bouncePct) ? "-" :
+     bouncePct >= scalpTradePct ? "THIS IS A TRADE" :
+     bouncePct <  50.0          ? "EXPECT CONTINUATION" : "AMBIGUOUS"
+
+// ── Reversal warnings (Lesson 1) ────────────────────────────────────────────────────────────
+// [RULE-099 | CON-066 | SRC-232 p.24 | DIRECT level / PROGRAMMABLE_APPROXIMATION on severity]
+// "Take the up-move and split it in half. If the pullback SEVERELY BREAKS that halfway point, it
+// is a deep drop." The 50% level is exact; "severely" is not quantified in Lesson 1. W15.
+bool deepDropLong = enReversal and not na(legSize) and legSize > 0 and not legIsDown and
+                    nz(safeDiv(legHi - low, legSize), 0.0) * 100.0 >= deepDropPct
+bool deepDropShort = enReversal and not na(legSize) and legSize > 0 and legIsDown and
+                     nz(safeDiv(high - legLo, legSize), 0.0) * 100.0 >= deepDropPct
+bool isDeepDrop = (deepDropLong or deepDropShort) and (pivLoConfirmed or pivHiConfirmed)
+
+// [RULE-100 | CON-068 | SRC-233 p.25 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// Market Law Four: "a head and shoulders WITHOUT the head. Price makes a high, pulls back,
+// rallies again but fails to make a SIGNIFICANT new high, then breaks down."
+bool lowerTop = enReversal and pivHiConfirmed and not na(prevPivHi) and
+                lastPivHi < prevPivHi - mlfSignifMult * atrUnit
+bool higherBottom = enReversal and pivLoConfirmed and not na(prevPivLo) and
+                    lastPivLo > prevPivLo + mlfSignifMult * atrUnit
+
+// [RULE-101 | CON-067 | SRC-231 p.23 | DIRECT concept / PROGRAMMABLE_APPROXIMATION]
+// "The first decline noticeably LARGER OR SHARPER THAN ANY PULLBACK BEFORE IT. This is the
+// signal Velez most wants you to train on."
+var float maxPriorPullback = 0.0
+var float lastPullback     = 0.0
+bool firstWarningDrop = false
+if pivLoConfirmed and not na(lastPivHi)
+    lastPullback := lastPivHi - lastPivLo
+    firstWarningDrop := enReversal and maxPriorPullback > 0 and lastPullback > maxPriorPullback
+    maxPriorPullback := math.max(maxPriorPullback, lastPullback)
+if stateChanged and isNarrow
+    maxPriorPullback := 0.0
+
+// NOT IMPLEMENTED, DELIBERATELY: the full six-stage head-and-shoulders with a neckline
+// (CON-069 | SRC-230/234/236 p.23-26). The source supplies no tolerance for shoulder equality,
+// no bar window and no neckline slope allowance, and explicitly warns against mechanising it:
+// "Treating it as a mechanical checklist ... the shoulders do not have to be equal, usually but
+// not always. The pattern is probabilistic. A slanted right shoulder still counts" (SRC-237
+// p.27). Building a detector would require inventing every one of those tolerances against a
+// direct instruction not to. The three components the source DOES define comparably — the 50%
+// deep-drop test, the first-warning-drop comparison and the lower-high structure — are
+// implemented above instead. See 02_CONCEPT_TO_CODE_MAP.md §8.
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §13  HIGHER-TIMEFRAME CONTEXT (optional, OFF by default)
+//      [RULE-102 | CON-115 | SRC-248 p.66 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+//      Requests only CLOSED higher-timeframe values, with lookahead EXPLICITLY off.
+//      barstate.isconfirmed is deliberately NOT used inside the request — that is a well-known
+//      anti-pattern which does not deliver higher-timeframe confirmation.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+[htfA, htfB] = request.security(syminfo.tickerid, htfTf,
+     [ta.sma(close, len20)[1], ta.sma(close, len20)[2]], lookahead = barmerge.lookahead_off)
+
+int htfDir = (not useHtf or na(htfA) or na(htfB)) ? DIR_NONE :
+     htfA > htfB ? DIR_LONG : htfA < htfB ? DIR_SHORT : DIR_NONE
+
+// [RULE-105 | CON-132 | EXPERIMENTAL] Higher-timeframe direction as a HARD GATE. The source
+// supports NOTING the higher-timeframe 20 direction (SRC-248); it does not support gating on it.
+bool expHtfBlocksLong  = expHtfGateActive and htfDir == DIR_SHORT
+bool expHtfBlocksShort = expHtfGateActive and htfDir == DIR_LONG
+
+// [RULE-104 | CON-131 | EXPERIMENTAL] Confluence density: a rolling count of supported events.
+float expDensity = expDensityActive ? math.sum(anyEvent ? 1.0 : 0.0, EXP_DENSITY_LEN) : 0.0
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §14  INITIAL STOP SELECTION  (computed BEFORE the gates so the dumb-stop rule can gate)
+//      [RULE-174 | CON-080/090/091/092 | SRC-077/153/154/155 | DIRECT / EXACT_TRANSLATION]
+//      "The stop belongs BEYOND THE STATE ITSELF, not merely beyond your entry bar."
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+float sleepyLowRef  = ta.lowest(low,   math.max(sleepyBars, 2))
+float sleepyHighRef = ta.highest(high, math.max(sleepyBars, 2))
+
+float initStopLong = obEntryLong ? obStopLong :
+     igniteLong ? (swingStopSel == "Whole sleepy base" ?
+          math.min(sleepyLowRef, stateBot) - tick : low - tick) :
+     pullbackLong ? (pullbackStopSel == "Pivot" and not na(lastPivLo) ?
+          lastPivLo - tick : low - tick) :
+     (isSurge and surgeLong) ? (ladderRungLong == 1 ? baseStopLong : thirdLong) :
+     stateBot - tick
+
+float initStopShort = obEntryShort ? obStopShort :
+     igniteShort ? (swingStopSel == "Whole sleepy base" ?
+          math.max(sleepyHighRef, stateTop) + tick : high + tick) :
+     pullbackShort ? (pullbackStopSel == "Pivot" and not na(lastPivHi) ?
+          lastPivHi + tick : high + tick) :
+     (isSurge and surgeShort) ? (ladderRungShort == 1 ? baseStopShort : thirdShort) :
+     stateTop + tick
+
+// [RULE-175 | CON-028/081 | SRC-077 p.11,55 | DIRECT / EXACT_TRANSLATION]
+// "NEVER PUT THE STOP INSIDE POSITION ONE ... A stop placed inside position one will be taken out
+// by the ordinary noise the setup is built on." The opening-bell method bypasses this by the
+// source's own explicit exception (SRC-078 p.11).
+bool stopValidLong  = obEntryLong  or not enforceDumbStop or initStopLong  < stateBot
+bool stopValidShort = obEntryShort or not enforceDumbStop or initStopShort > stateTop
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §15  HARD GATES, BLOCKERS AND THE CONFLUENCE LAYER
+//      [RULE-110..129 | CON-111/112 | 04_INDICATOR_ARCHITECTURE.md §8]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-110 | FIDELITY LAYER] In STRICT fidelity, state and position do NOT gate — because
+// gating requires a threshold the source refuses to supply. They are still computed and shown.
+bool gateWithFunnel = fidelity != FID_STRICT
+
+int blockers = 0
+if not ready
+    blockers := blockers + BLK_WARMUP
+if gateWithFunnel and insideState
+    blockers := blockers + BLK_INSIDE_STATE                    // SRC-075 p.10
+if not evEntryEligible
+    blockers := blockers + BLK_NO_EVENT                        // SRC-025 p.5
+if enforce20Dir and candDir != DIR_NONE and trendDir != DIR_NONE and candDir != trendDir
+    blockers := blockers + BLK_AGAINST_20                      // SRC-224 p.43
+else if enforce20Dir and gateWithFunnel and trendFlat and candDir != DIR_NONE
+    blockers := blockers + BLK_AGAINST_20                      // SRC-225 p.43 "discard these"
+if gateWithFunnel and plutoLand and candDir != DIR_NONE and candDir == trendDir
+    blockers := blockers + BLK_PLUTO                           // SRC-079 p.11, SRC-284 p.56
+if gateWithFunnel and enSwing and threeFingers and (isIgnite or isPullback)
+    blockers := blockers + BLK_THREE_FINGERS                   // SRC-292 p.36
+if (candDir == DIR_LONG and not stopValidLong) or (candDir == DIR_SHORT and not stopValidShort)
+    blockers := blockers + BLK_DUMB_STOP                       // SRC-077 p.11
+if isSurge and ((surgeLong and ladderRungLong == 3) or (surgeShort and ladderRungShort == 3))
+    blockers := blockers + BLK_LADDER_SKIP                     // SRC-197 p.38 "skip the trade"
+if conflictingEvents
+    blockers := blockers + BLK_CONFLICT                        // same-bar policy S6
+if (expHtfBlocksLong and candDir == DIR_LONG) or (expHtfBlocksShort and candDir == DIR_SHORT)
+    blockers := blockers + BLK_HTF_OPPOSED                     // experimental
+
+bool gatesPass = blockers == 0
+
+// [RULE-120..129 | CON-111 | IMPLEMENTATION-DEFINED CONFLUENCE LAYER]
+// NOT a Velez taxonomy — Velez never scores a setup numerically. A transparent additive model
+// built only from source-supported dimensions, with published weights reproduced in Debug Mode.
+// THE SCORE NEVER GATES; it only ranks what the source's own gates have already allowed.
+int qScore = 0
+if narrowGrade == NG_G1
+    qScore := qScore + 3                                       // SRC-055
+else if narrowGrade == NG_G2
+    qScore := qScore + 2                                       // SRC-056
+else if narrowGrade == NG_G3
+    qScore := qScore + 1                                       // SRC-057
+else if isRegular and near20
+    qScore := qScore + 1                                       // SRC-059/061
+if posAbs == 1
+    qScore := qScore + 3                                       // SRC-072
+else if posAbs == 2
+    qScore := qScore + 1                                       // SRC-074
+qScore := qScore + (ev.rank == EV_COMBO    ? 3 :               // SRC-107
+                    ev.rank == EV_ELEPHANT ? 2 :               // SRC-092
+                    ev.rank == EV_TAIL     ? 2 :               // SRC-096
+                    ev.rank == EV_COLOUR   ? 1 :               // SRC-102
+                    ev.rank == EV_TAKEOUT  ? 1 : 0)            // SRC-133
+if candDir != DIR_NONE and candDir == trendDir
+    qScore := qScore + 2                                       // SRC-224
+if isSurge
+    qScore := qScore + 2                                       // SRC-190
+if (candDir == DIR_LONG and clearLeftLong) or (candDir == DIR_SHORT and clearLeftShort)
+    qScore := qScore + 1                                       // SRC-192
+if mergePurgeSurge
+    qScore := qScore + 2                                       // SRC-199
+if pullbackFollowsIgnite
+    qScore := qScore + 1                                       // SRC-208
+if legCount <= 1
+    qScore := qScore + 1                                       // SRC-202
+if not gatesPass
+    qScore := 0
+
+string qTier = tierName(qScore)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §16  TRAILING-STOP REFERENCE CANDIDATES
+//      [RULE-130..139 | CON-082..089 | SRC-142..148]
+//      This section produces CANDIDATE LEVELS only; the rotation is applied in §17.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-130 | CON-089 | SRC-147 p.29 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+// "The selection rule is DISTANCE FROM THE 20. Close to it, use big bars. Away from it, use bar
+// by bar. Accelerating hard, use the 8." The fat-bar reference carries no distance condition in
+// the five-methods table (SRC-142), so the selection rule is expressed through the bar-by-bar
+// and acceleration gates below.
+bool eligBarByBar = spaceN >= barByBarSpace                    // SRC-146 "dangling in mid-air"
+
+// [RULE-131 | CON-086 | SRC-145 p.14,29 | DIRECT rule / PROGRAMMABLE_APPROXIMATION] W12.
+float dPrice = close - close[accelLen]
+float dMa20  = sma20 - sma20[accelLen]
+bool accelLong  = dPrice > 0 and dMa20 > 0 and dPrice > accelMult * dMa20
+bool accelShort = dPrice < 0 and dMa20 < 0 and math.abs(dPrice) > accelMult * math.abs(dMa20)
+
+// [RULE-132 | CON-082 | SRC-142 p.14 | DIRECT / PROGRAMMABLE_APPROXIMATION on bar size]
+// "Every time a large, solid bar prints, move the stop under it. Healthy stocks do not take out
+// their own fat bars."
+var float fatBarStopLong  = na
+var float fatBarStopShort = na
+if isElephant
+    fatBarStopLong  := low  - tick
+    fatBarStopShort := high + tick
+
+// [RULE-133 | CON-083 | SRC-143 p.14,51 | DIRECT / EXACT_TRANSLATION]
+// "one counter-colour bar followed by two bars in your direction ... move the stop just beyond
+// that isolated counter-colour bar. LONG: RED, THEN GREEN-GREEN. SHORT: GREEN, THEN RED-RED."
+// SOURCE INCONSISTENCY (SRC-152): the p.15 diagram labels an isolated group "GREEN, RED, RED"
+// while illustrating a RISING (long-side) sequence — that label is the SHORT-side pattern. The
+// textual rule is stated twice, in both directions, on pp.14 and 51, and is what is implemented.
+// The inconsistency is documented in 01_MASTER_RULEBOOK.md §10.3 T4 rather than smoothed over.
+bool colourAdjLong  = isRed[2]   and isGreen[1] and isGreen
+bool colourAdjShort = isGreen[2] and isRed[1]   and isRed
+var float colourStopLong  = na
+var float colourStopShort = na
+if colourAdjLong
+    colourStopLong  := low[2]  - tick
+if colourAdjShort
+    colourStopShort := high[2] + tick
+
+// [RULE-134 | CON-084 | SRC-144/320 p.14,60 | DIRECT rule / PROGRAMMABLE_APPROXIMATION]
+// "When a new swing low forms and price moves away from it, put the stop under it. HOLD THERE
+// UNTIL THE 20 CLIMBS PAST THAT LEVEL, then go back to trailing the 20."
+// REPAINT CLASS: CONFIRMED-LATER — adopted on the confirmation bar only.
+var float pivotStopLong  = na
+var float pivotStopShort = na
+if pivLoConfirmed
+    pivotStopLong  := lastPivLo - tick
+if pivHiConfirmed
+    pivotStopShort := lastPivHi + tick
+bool pivotHandedBackLong  = not na(pivotStopLong)  and sma20 > pivotStopLong
+bool pivotHandedBackShort = not na(pivotStopShort) and sma20 < pivotStopShort
+
+// [RULE-135..137] The remaining references.
+float ma20StopLong  = ma20Lo
+float ma20StopShort = ma20Hi
+float ma8StopLong   = sma8 - band
+float ma8StopShort  = sma8 + band
+float barByBarLong  = low[1]  - tick
+float barByBarShort = high[1] + tick
+
+// [RULE-138 | CON-094 | SRC-150 p.14 | PLATFORM_SAFEGUARD PS-04]
+bool setAll     = stopSetSel == "All eligible"
+bool setSwing   = stopSetSel == "Swing (pivot, big bar, MA)"
+bool setOpening = stopSetSel == "Opening bell (fat bar, colour adjust)"
+bool usePivot  = setAll or setSwing
+bool useFat    = setAll or setSwing or setOpening
+bool useColour = setAll or setOpening
+bool useMa     = setAll or setSwing
+bool useBarBar = setAll
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §17  VIRTUAL LIFECYCLE STATE MACHINE
+//      [RULE-170..189 | CON-110 | 04_INDICATOR_ARCHITECTURE.md §6]
+//      A VIRTUAL METHODOLOGY LIFECYCLE. No fills, no size, no P&L, no broker.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+var Lifecycle lc = Lifecycle.new()
+
+// [RULE-170a] Reset a terminal lifecycle at the START of the next bar. Reading lc at the top of
+// the bar gives the previous bar's closing state, so no UDT history access is needed (Pine does
+// not support the [1] operator on UDT fields).
+if lc.state == LC_COMPLETED or lc.state == LC_INVALIDATED
+    lc.state       := LC_IDLE
+    lc.dir         := DIR_NONE
+    lc.stop        := na
+    lc.stopMethod  := SM_NONE
+    lc.adds        := 0
+    lc.pushes      := 0
+    lc.initPeak    := na
+    lc.initDone    := false
+    lc.lastPushExt := na
+    lc.exitReason  := ""
+
+bool lcActive = lc.state == LC_LONG_ACTIVE or lc.state == LC_SHORT_ACTIVE or
+                lc.state == LC_EXIT_CONTEXT
+
+// ── Entry candidates ────────────────────────────────────────────────────────────────────────
+// [RULE-171 | CON-040 | SRC-054/061/072 | DIRECT / EXACT_TRANSLATION]
+bool narrowEntryLong  = gateWithFunnel ?
+     (isNarrow and pos ==  1 and evEntryEligible and candDir == DIR_LONG) :
+     (evEntryEligible and candDir == DIR_LONG)
+bool narrowEntryShort = gateWithFunnel ?
+     (isNarrow and pos == -1 and evEntryEligible and candDir == DIR_SHORT) :
+     (evEntryEligible and candDir == DIR_SHORT)
+
+// [RULE-172 | CON-041 | SRC-059/061/099/108 | DIRECT / PROGRAMMABLE_APPROXIMATION]
+bool regEntryLong  = gateWithFunnel and isRegular and near20 and evEntryEligible and
+                     candDir == DIR_LONG
+bool regEntryShort = gateWithFunnel and isRegular and near20 and evEntryEligible and
+                     candDir == DIR_SHORT
+
+// [RULE-173 | CON-042 | SRC-060/063/074 | DIRECT / EXACT_TRANSLATION]
+// "In a wide state you flip your bias and look for power in the OPPOSITE direction, because the
+// market is heading back toward narrow."
+bool revEntryLong  = gateWithFunnel and isWide and pos == -3 and evEntryEligible and
+                     candDir == DIR_LONG
+bool revEntryShort = gateWithFunnel and isWide and pos ==  3 and evEntryEligible and
+                     candDir == DIR_SHORT
+
+bool entryLongRaw  = gatesPass and (narrowEntryLong or regEntryLong or revEntryLong or
+                     obEntryLong or hiddenRedLong or dualLong)
+bool entryShortRaw = gatesPass and (narrowEntryShort or regEntryShort or revEntryShort or
+                     obEntryShort or hiddenGreenShort or dualShort)
+
+// [SAME-BAR POLICY S3/S6] Never enter on a bar carrying conflicting evidence.
+bool anyEntryLong  = entryLongRaw  and not entryShortRaw
+bool anyEntryShort = entryShortRaw and not entryLongRaw
+
+// ── FSM: pre-entry phases ───────────────────────────────────────────────────────────────────
+if ready and not lcActive
+    bool stateSupports = isNarrow or isWide or (isRegular and near20)
+    bool posSupports   = posAbs == 1 or (isWide and posAbs == 3) or not gateWithFunnel
+    lc.state := not stateSupports and gateWithFunnel ? LC_IDLE :
+                not posSupports ? LC_WATCHING :
+                (evEntryEligible and gatesPass) ? LC_QUALIFIED : LC_DEVELOPING
+
+// ── FSM: entry ──────────────────────────────────────────────────────────────────────────────
+// [RULE-176 | PLATFORM_SAFEGUARD PS-01] One lifecycle at a time unless reversal is allowed.
+bool canOpen = not lcActive or allowReversal
+if ready and canOpen and (anyEntryLong or anyEntryShort)
+    lc.dir         := anyEntryLong ? DIR_LONG : DIR_SHORT
+    lc.state       := anyEntryLong ? LC_LONG_ACTIVE : LC_SHORT_ACTIVE
+    lc.entryBar    := bar_index
+    lc.entryRef    := anyEntryLong ? (obEntryLong  ? obMarkLong  : nz(ev.refLevel, close))
+                                   : (obEntryShort ? obMarkShort : nz(ev.refLevel, close))
+    lc.initStop    := anyEntryLong ? initStopLong : initStopShort
+    lc.stop        := lc.initStop
+    lc.stopMethod  := SM_INITIAL
+    lc.adds        := 0
+    lc.pushes      := 0
+    lc.entryState  := state
+    lc.isOpening   := anyEntryLong ? obEntryLong : obEntryShort
+    lc.initPeak    := na
+    lc.initDone    := false
+    lc.lastPushExt := na
+    lc.exitReason  := ""
+
+lcActive := lc.state == LC_LONG_ACTIVE or lc.state == LC_SHORT_ACTIVE or
+            lc.state == LC_EXIT_CONTEXT
+bool lcLong = lc.dir == DIR_LONG
+
+// ── FSM: adds ───────────────────────────────────────────────────────────────────────────────
+// [RULE-177 | CON-043/044 | SRC-123/126 p.13,30 | DIRECT / EXACT_TRANSLATION]
+// "ADD ON THE FIRST COLOUR CHANGE AFTER ENTRY ... described as MANDATORY rather than optional."
+// Continued adds are permitted on subsequent qualifying events at or near the 20 (SRC-126).
+bool addTrigger = false
+if lcActive and bar_index > lc.entryBar and lc.adds < maxAdds
+    bool ccInDir      = lcLong ? ccBull : ccBear
+    bool takeoutInDir = lcLong ? takeoutBull : takeoutBear
+    bool contEvent    = ccInDir or (lcLong ? bottomingTail : toppingTail) or
+                        (lcLong ? elephantBull : elephantBear)
+    addTrigger := lc.adds == 0 ? (ccInDir or takeoutInDir) : (contEvent and near20)
+    if addTrigger
+        lc.adds := lc.adds + 1
+
+// ── FSM: stop rotation ──────────────────────────────────────────────────────────────────────
+// [RULE-178 | CON-088 | SRC-140/148 p.14 | DIRECT / EXACT_TRANSLATION]
+// "You apply whichever one currently gives the HIGHEST PROTECTIVE LEVEL, and you re-check every
+// time a new bar qualifies." Monotonic: the stop never loosens (CON-095 / SRC-095).
+// The initial stop holds on the entry bar itself.
+bool rotOk = lcActive and bar_index > lc.entryBar
+
+float candPivot = rotOk and usePivot ?
+     (lcLong ? (pivotHandedBackLong  ? float(na) : pivotStopLong)
+             : (pivotHandedBackShort ? float(na) : pivotStopShort)) : float(na)
+float candFat = rotOk and useFat ?
+     (lcLong ? fatBarStopLong : fatBarStopShort) : float(na)
+float candColour = rotOk and useColour ?
+     (lcLong ? colourStopLong : colourStopShort) : float(na)
+float candMa20 = rotOk and useMa ?
+     (lcLong ? ma20StopLong : ma20StopShort) : float(na)
+float candMa8 = rotOk and useMa and (lcLong ? accelLong : accelShort) ?
+     (lcLong ? ma8StopLong : ma8StopShort) : float(na)
+float candBbb = rotOk and useBarBar and eligBarByBar ?
+     (lcLong ? barByBarLong : barByBarShort) : float(na)
+
+[rs1, rm1] = applyStop(lcLong, lc.stop, lc.stopMethod, candPivot,  SM_PIVOT)
+[rs2, rm2] = applyStop(lcLong, rs1,     rm1,           candFat,    SM_FATBAR)
+[rs3, rm3] = applyStop(lcLong, rs2,     rm2,           candColour, SM_COLOUR)
+[rs4, rm4] = applyStop(lcLong, rs3,     rm3,           candMa20,   SM_MA20)
+[rs5, rm5] = applyStop(lcLong, rs4,     rm4,           candMa8,    SM_MA8)
+[rs6, rm6] = applyStop(lcLong, rs5,     rm5,           candBbb,    SM_BARBYBAR)
+
+bool stopMoved = rotOk and not na(rs6) and rs6 != lc.stop
+if rotOk
+    lc.stop       := rs6
+    lc.stopMethod := rm6
+
+// ── FSM: pushes ─────────────────────────────────────────────────────────────────────────────
+// [RULE-179 | CON-100 | SRC-170 p.16 | DIRECT rule / PROGRAMMABLE_APPROXIMATION]
+// A push is NEVER mechanically defined anywhere in the 71 pages. Implemented as a confirmed
+// higher-pivot count so ONE notion of "swing" governs the whole chart. Worksheet W10.
+// REPAINT CLASS: CONFIRMED-LATER.
+// pushIncrement is tracked as a plain bool because Pine does not support the [1] history
+// operator on user-defined-type fields — lc.pushes[1] is not a legal expression.
+bool pushIncrement = false
+if lcActive
+    if lcLong and pivHiConfirmed and lastPivHiBar > lc.entryBar and
+       (na(lc.lastPushExt) or lastPivHi > lc.lastPushExt)
+        lc.lastPushExt := lastPivHi
+        lc.pushes      := lc.pushes + 1
+        pushIncrement  := true
+    if not lcLong and pivLoConfirmed and lastPivLoBar > lc.entryBar and
+       (na(lc.lastPushExt) or lastPivLo < lc.lastPushExt)
+        lc.lastPushExt := lastPivLo
+        lc.pushes      := lc.pushes + 1
+        pushIncrement  := true
+
+// [RULE-180 | CON-103 | SRC-173 p.16 | DIRECT rule / PROGRAMMABLE_APPROXIMATION]
+// "Once price makes a fresh peak BEYOND THE INITIAL MOVE ... you have EARNED THE RIGHT to take
+// money off the table ... this is a RIGHT AND NOT AN OBLIGATION." The initial move runs from
+// entry to the first confirmed counter-pivot. Worksheet W11.
+if lcActive and not lc.initDone
+    lc.initPeak := na(lc.initPeak) ? (lcLong ? high : low) :
+         (lcLong ? math.max(lc.initPeak, high) : math.min(lc.initPeak, low))
+    if (lcLong and pivLoConfirmed and lastPivLoBar > lc.entryBar) or
+       (not lcLong and pivHiConfirmed and lastPivHiBar > lc.entryBar)
+        lc.initDone := true
+
+bool newHighRight = lcActive and lc.initDone and not na(lc.initPeak) and
+                    (lcLong ? high > lc.initPeak : low < lc.initPeak)
+
+// ── FSM: exit contexts ──────────────────────────────────────────────────────────────────────
+bool exitThirdPush    = lcActive and lc.pushes >= 3                       // SRC-170
+bool exitNarrowToWide = lcActive and lc.entryState == ST_NARROW and isWide // SRC-062/180
+bool push2Right = lcActive and lc.pushes == 2 and not na(lc.lastPushExt) and
+     not na(lc.entryRef) and
+     math.abs(lc.lastPushExt - lc.entryRef) >= push2Large * math.max(atrUnit, tick)  // SRC-171
+bool obWindowExpired = lcActive and lc.isOpening and (bar_index - lc.entryBar) > openWindowBars
+
+string exitReason = exitNarrowToWide ? "NARROW->WIDE" :
+                    exitThirdPush    ? "3RD PUSH" :
+                    newHighRight     ? "NEW HIGH RIGHT" :
+                    obWindowExpired  ? "WINDOW ELAPSED" : ""
+bool anyExitContext = exitReason != ""
+
+// ── FSM: terminal transitions ───────────────────────────────────────────────────────────────
+// [RULE-185 | SAME-BAR POLICY S2/S7/S11] The stop is evaluated BEFORE any favourable roll can
+// rescue the bar, and a gap through the reference records the gap open — never a level price
+// never traded.
+bool stopBroken = lcActive and not na(lc.stop) and (lcLong ? low <= lc.stop : high >= lc.stop)
+bool gapThrough = stopBroken and (lcLong ? open < lc.stop : open > lc.stop)
+
+// [RULE-186 | SAME-BAR POLICY S1] Entry and stop on the same bar -> treat as stopped.
+bool sameBarAmbiguity = lcActive and lc.entryBar == bar_index and stopBroken
+
+bool lcCompleted   = false
+bool lcInvalidated = false
+
+if lcActive
+    if sameBarAmbiguity
+        lc.state      := LC_INVALIDATED
+        lc.exitReason := "SAME-BAR AMBIGUITY"
+        lcInvalidated := true
+    else if stopBroken
+        lc.state      := LC_COMPLETED
+        lc.exitReason := gapThrough ? "STOP-OUT (GAP-THROUGH)" : "STOP-OUT"
+        lcCompleted   := true
+    else if anyExitContext
+        lc.state      := LC_EXIT_CONTEXT
+        lc.exitReason := exitReason
+    else
+        lc.state      := lcLong ? LC_LONG_ACTIVE : LC_SHORT_ACTIVE
+        lc.exitReason := ""
+
+lcActive := lc.state == LC_LONG_ACTIVE or lc.state == LC_SHORT_ACTIVE or
+            lc.state == LC_EXIT_CONTEXT
+
+// Plain bool mirrors of the lifecycle state, so rising-edge detection operates on an ordinary
+// series rather than on a user-defined-type field (Pine has no [1] operator for UDT fields).
+bool lcLongActive  = lc.state == LC_LONG_ACTIVE
+bool lcShortActive = lc.state == LC_SHORT_ACTIVE
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §18  VISIBILITY RESOLVER
+//      [RULE-190..199 | 03_VISUAL_DESIGN_SPEC.md §5-§6]
+//      Modes change VISIBILITY ONLY. Nothing here alters detection.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+bool inWindow = bar_index > last_bar_index - historyCap
+
+showEventMarker(int rank, int score) =>
+    bool base = showEvents and inWindow and ready
+    bool byMode = modeFull ? true :
+                  modeAnalysis ? rank >= EV_TAKEOUT :
+                  (rank == EV_COMBO or (rank == EV_ELEPHANT and score >= 10) or score >= 7)
+    base and byMode
+
+var int lastEventLabelBar = na
+canPlaceEventLabel() =>
+    na(lastEventLabelBar) or (bar_index - lastEventLabelBar) >= labelGap
+
+var int altToggle = 0
+offsetFor(bool above) =>
+    float mult = altToggle % 2 == 0 ? 1.0 : ALT_OFFSET_MULT
+    float off  = labelOffAtr * atrUnit * mult
+    above ? high + off : low - off
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §19  COLOURS
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+color colBull = cbSafe ? #1F6FB2 : colBullIn
+color colBear = cbSafe ? #C4661A : colBearIn
+color colNeut = colNeutIn
+color colDeep = colDeepIn
+color colWarn = colWarnIn
+color colMute = color.new(colNeutIn, 55)
+color stateColor = isNarrow ? colBull : isWide ? colBear : colNeut
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §20  PLOTS (global scope — Pine requires it; visibility is series-driven, never conditional)
+//      [RULE-200..207]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// [RULE-200 | CON-001/002 | SRC-030/031] The two permanent fixtures.
+// The source's own diagram convention (p.2): thin line = the 20, thick line = the 200.
+plot(ready ? sma20  : na, "20 SMA",  color = colNeut, linewidth = 1)
+plot(ready ? sma200 : na, "200 SMA", color = colDeep, linewidth = 2)
+
+// [RULE-201 | CON-003 | SRC-033] The 8 appears only while escalated — it is situational.
+bool ma8Visible = showMa8 and lcActive and lc.stopMethod == SM_MA8
+plot(ma8Visible ? sma8 : na, "8 SMA (trail only)", color = color.new(colNeut, 20), linewidth = 1,
+     style = plot.style_linebr)
+
+// [RULE-202 | CON-004 | SRC-042/003] Zones, not lines.
+p20Hi  = plot(ready and showBands ? ma20Hi  : na, "20 band +",  color = color.new(colNeut, 100))
+p20Lo  = plot(ready and showBands ? ma20Lo  : na, "20 band -",  color = color.new(colNeut, 100))
+p200Hi = plot(ready and showBands ? ma200Hi : na, "200 band +", color = color.new(colDeep, 100))
+p200Lo = plot(ready and showBands ? ma200Lo : na, "200 band -", color = color.new(colDeep, 100))
+fill(p20Hi,  p20Lo,  color = color.new(colNeut, 92), title = "20 zone")
+fill(p200Hi, p200Lo, color = color.new(colDeep, 92), title = "200 zone")
+
+// [RULE-203 | CON-088] The active virtual stop — the single most operationally important object,
+// and the one thing a reader cannot reconstruct by eye. Visible in EVERY mode, including Clean.
+plot(showLifecycle and lcActive and inWindow ? lc.stop : na, "Virtual stop (v)",
+     color = lcLong ? colBull : colBear, linewidth = 2, style = plot.style_linebr)
+
+// [RULE-203b] Entry reference and the FROZEN initial stop. Both are plots rather than line
+// objects so they cost no drawing budget and extend automatically for the lifecycle's life.
+// The initial stop is hidden in Clean Mode (03_VISUAL_DESIGN_SPEC.md §10.1).
+plot(showLifecycle and lcActive and inWindow ? lc.entryRef : na, "Virtual entry ref (v)",
+     color = color.new(colNeut, 30), linewidth = 1, style = plot.style_linebr)
+plot(showLifecycle and lcActive and inWindow and modeAnalysis ? lc.initStop : na,
+     "Virtual initial stop (v)", color = color.new(colWarn, 45), linewidth = 1,
+     style = plot.style_linebr)
+
+// [RULE-204 | 03_VISUAL_DESIGN_SPEC.md §6 R8] The Data Window pressure valve: detail that does
+// not earn chart space.
+plot(qScore,     "Confluence score [impl]", display = display.data_window)
+plot(spaceRank,  "Space percentile",        display = display.data_window)
+plot(pos,        "Position (+3..-3)",       display = display.data_window)
+plot(gapN,       "20/200 gap (units)",      display = display.data_window)
+plot(lc.pushes,  "Virtual pushes [c]",      display = display.data_window)
+plot(legCount,   "Leg count",               display = display.data_window)
+plot(expDensity, "Confluence density [exp]", display = display.data_window)
+
+// [RULE-205] Compact event shapes. plotshape costs no label budget, which is what lets Full
+// Velez Mode show every supported event inside the bounded window.
+bool sComboB = showEventMarker(EV_COMBO,    qScore) and comboBull
+bool sComboS = showEventMarker(EV_COMBO,    qScore) and comboBear
+bool sEleB   = showEventMarker(EV_ELEPHANT, qScore) and elephantBull and not comboBull
+bool sEleS   = showEventMarker(EV_ELEPHANT, qScore) and elephantBear and not comboBear
+bool sTailB  = showEventMarker(EV_TAIL,     qScore) and bottomingTail
+bool sTailS  = showEventMarker(EV_TAIL,     qScore) and toppingTail
+bool sCcB    = showEventMarker(EV_COLOUR,   qScore) and ccBull and not comboBull
+bool sCcS    = showEventMarker(EV_COLOUR,   qScore) and ccBear and not comboBear
+bool sTkB    = showEventMarker(EV_TAKEOUT,  qScore) and takeoutBull
+bool sTkS    = showEventMarker(EV_TAKEOUT,  qScore) and takeoutBear
+
+plotshape(sComboB, title = "Elephant + change (bull)", style = shape.diamond,
+     location = location.belowbar, color = colBull, size = size.tiny)
+plotshape(sComboS, title = "Elephant + change (bear)", style = shape.diamond,
+     location = location.abovebar, color = colBear, size = size.tiny)
+// Exhaustion elephants are drawn MORE QUIETLY than igniting ones, because the source's point is
+// that they are a reason NOT to act (SRC-235, SRC-287).
+plotshape(sEleB, title = "Elephant (bull)", style = shape.triangleup,
+     location = location.belowbar, color = isExhaustion ? color.new(colBull, 55) : colBull,
+     size = size.tiny)
+plotshape(sEleS, title = "Elephant (bear)", style = shape.triangledown,
+     location = location.abovebar, color = isExhaustion ? color.new(colBear, 55) : colBear,
+     size = size.tiny)
+plotshape(sTailB, title = "Bottoming tail", style = shape.circle, location = location.belowbar,
+     color = colBull, size = size.tiny)
+plotshape(sTailS, title = "Topping tail", style = shape.circle, location = location.abovebar,
+     color = colBear, size = size.tiny)
+plotshape(sCcB, title = "Colour change (bull)", style = shape.xcross,
+     location = location.belowbar, color = color.new(colBull, 25), size = size.tiny)
+plotshape(sCcS, title = "Colour change (bear)", style = shape.xcross,
+     location = location.abovebar, color = color.new(colBear, 25), size = size.tiny)
+plotshape(sTkB, title = "Red bar takeout", style = shape.arrowup, location = location.belowbar,
+     color = color.new(colBull, 35), size = size.tiny)
+plotshape(sTkS, title = "Green bar takeout", style = shape.arrowdown,
+     location = location.abovebar, color = color.new(colBear, 35), size = size.tiny)
+
+// [RULE-206] Lifecycle transition shapes. Entry/add/stop-out use location.absolute with an
+// explicit price series (a bool series with location.absolute would plot at 0/1).
+plotshape(showLifecycle and inWindow and rise(lcLongActive),
+     title = "Virtual entry (long)", style = shape.labelup, location = location.belowbar,
+     color = colBull, size = size.small, text = "ENTRY", textcolor = color.white)
+plotshape(showLifecycle and inWindow and rise(lcShortActive),
+     title = "Virtual entry (short)", style = shape.labeldown, location = location.abovebar,
+     color = colBear, size = size.small, text = "ENTRY", textcolor = color.white)
+plotshape(showLifecycle and inWindow and addTrigger ?
+     (lcLong ? low - labelOffAtr * atrUnit : high + labelOffAtr * atrUnit) : na,
+     title = "Virtual add", style = shape.cross, location = location.absolute, color = colNeut,
+     size = size.tiny)
+plotshape(showLifecycle and inWindow and lcCompleted ? lc.stop : na,
+     title = "Virtual stop-out", style = shape.xcross, location = location.absolute,
+     color = colWarn, size = size.small)
+plotshape(showPushes and inWindow and pushIncrement ? (lcLong ? high : low) : na,
+     title = "Push [c]", style = shape.flag, location = location.absolute,
+     color = color.new(colNeut, 30), size = size.tiny)
+
+// [RULE-207 | CON-010 | PLATFORM_SAFEGUARD] Ambient state indication — never both at once.
+// PINE LIMITATION, stated rather than glossed: Pine cannot anchor a fixed-height strip to the
+// top of the price pane, because the visible price range is not exposed to the script. The
+// "state ribbon" of 03_VISUAL_DESIGN_SPEC.md §8 is therefore realised as a very light pane-wide
+// wash (6% opacity) rather than a 3px strip. The heavier "background tint" option is a separate,
+// opt-in control with its own opacity cap.
+bgcolor(showBg and ready ? color.new(stateColor, bgOpacity) : na, title = "State background")
+bgcolor(showRibbon and not showBg and ready ? color.new(stateColor, 94) : na,
+     title = "State wash (ribbon)")
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §21  DRAWING-OBJECT MANAGEMENT (bounded ring buffers)
+//      [RULE-208..209 | CON-118/119 | PLATFORM_SAFEGUARD PS-09]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+var array<label> evLabels  = array.new<label>()
+var array<line>  evLines   = array.new<line>()
+var array<label> lcLabels  = array.new<label>()
+var array<box>   ctxBoxes  = array.new<box>()
+var array<line>  ctxLines  = array.new<line>()
+var array<label> ctxLabels = array.new<label>()
+var int trimmedCount = 0
+
+// [RULE-208 | R1/R2] One aggregated label per bar, highest priority only, spacing-limited.
+if anyEvent and showEventMarker(ev.rank, qScore) and canPlaceEventLabel() and not modeClean
+    bool above = ev.dir == DIR_SHORT
+    string txt = ev.lbl + aMark(ev.approx)
+    if qScore > 0
+        txt := txt + "\n" + qTier + " " + tierPips(qScore) + " [impl]"
+    label l = label.new(bar_index, offsetFor(above), txt,
+         style     = above ? label.style_label_down : label.style_label_up,
+         color     = color.new(ev.dir == DIR_LONG ? colBull : colBear, 12),
+         textcolor = color.white,
+         size      = modeFull ? size.tiny : size.small,
+         tooltip   = "Traceability: see 02_CONCEPT_TO_CODE_MAP.md. '~' marks a value that " +
+                     "depends on a threshold ADDED by this implementation, not taken from the " +
+                     "source. '[impl]' marks the confluence layer, which is not a Velez taxonomy.")
+    array.push(evLabels, l)
+    lastEventLabelBar := bar_index
+    altToggle := altToggle + 1
+trimmedCount := trimmedCount + trimLabels(evLabels, CAP_EV_LABEL)
+
+// [RULE-209 | CON-034 | SRC-105 p.13] The colour-change reference line at the BODY extreme —
+// the single most useful event visual, because body-not-tail is the detail the source says
+// people get wrong.
+if showCcLine and isColourChange and modeAnalysis and inWindow
+    float lvl    = ccBull ? ccUseHi : ccUseLo
+    int   srcBar = math.max(ccBull ? nz(ccRefHiBar[1], bar_index - 1)
+                                   : nz(ccRefLoBar[1], bar_index - 1), 0)
+    if not na(lvl)
+        line ln = line.new(srcBar, lvl, bar_index, lvl, color = color.new(colNeut, 35),
+             style = line.style_dashed, width = 1)
+        array.push(evLines, ln)
+trimmedCount := trimmedCount + trimLines(evLines, CAP_EV_LINE)
+
+// Lifecycle: stop-method change ticks (Analysis+).
+if showLifecycle and lcActive and modeAnalysis and inWindow and stopMoved
+    label sl = label.new(bar_index, lc.stop, stopMethodName(lc.stopMethod) + vMark(),
+         style = lcLong ? label.style_label_up : label.style_label_down,
+         color = color.new(colNeut, 20), textcolor = color.white, size = size.tiny)
+    array.push(lcLabels, sl)
+trimmedCount := trimmedCount + trimLabels(lcLabels, CAP_LC_LABEL)
+
+// Context: position zone boxes, anchored at the right edge only (Analysis+).
+if showZones and modeAnalysis and barstate.islast and ready
+    int zoneLeft = math.max(bar_index - zoneBoxBars, 0)
+    box b1 = box.new(zoneLeft, stateTop + p1Max * posUnit, bar_index + 3, stateTop,
+         border_color = color.new(colBull, 70), bgcolor = color.new(colBull, 94),
+         text = "POSITION 1" + aMark(true), text_size = size.tiny,
+         text_color = color.new(colBull, 20), text_halign = text.align_right)
+    box b2 = box.new(zoneLeft, stateBot, bar_index + 3, stateBot - p1Max * posUnit,
+         border_color = color.new(colBear, 70), bgcolor = color.new(colBear, 94),
+         text = "POSITION -1" + aMark(true), text_size = size.tiny,
+         text_color = color.new(colBear, 20), text_halign = text.align_right)
+    array.push(ctxBoxes, b1)
+    array.push(ctxBoxes, b2)
+trimmedCount := trimmedCount + trimBoxes(ctxBoxes, CAP_CTX_BOX)
+
+// Context: the retracement ladder (Full+), with the source's claims explicitly attributed.
+if showOdds and enRetrace and modeFull and barstate.islast and legStrong
+    array<float>  lvls = array.from(ret25, ret50, ret75, ret100)
+    array<string> txts = array.from(
+         "25% - the source claims 9 of 10 (V6, self-reported)",
+         "50% - the source claims 6 of 10 (V6, self-reported)",
+         "75% - the source claims 2 of 10 (V6, self-reported)",
+         "100% - the source claims 1 of 10 (V6, self-reported)")
+    int retLeft = math.max(bar_index - 40, 0)
+    for i = 0 to 3
+        float v = array.get(lvls, i)
+        if not na(v)
+            line rl = line.new(retLeft, v, bar_index + 5, v,
+                 color = color.new(colNeut, 55), style = line.style_dotted)
+            array.push(ctxLines, rl)
+            label rlb = label.new(bar_index + 5, v, array.get(txts, i) + cMark(),
+                 style = label.style_label_left, color = color.new(colNeut, 88),
+                 textcolor = colNeut, size = size.tiny,
+                 tooltip = "These hit rates are the SOURCE'S OWN SELF-REPORTED CLAIMS " +
+                 "(SRC-216/258, p.19,46). They are unpublished, carry no sample size, date " +
+                 "range or instrument set, and are NOT outputs of this indicator. The LEVELS " +
+                 "are computed; the odds are quoted, not asserted.")
+            array.push(ctxLabels, rlb)
+trimmedCount := trimmedCount + trimLines(ctxLines, CAP_CTX_LINE)
+trimmedCount := trimmedCount + trimLabels(ctxLabels, CAP_CTX_LABEL)
+
+// One-time non-standard chart warning. Cannot be dismissed by a display mode.
+if nonStandardChart and barstate.islast
+    label.new(bar_index, high, "CHART TYPE: NON-STANDARD\nBar-pattern logic (elephant, tail, " +
+         "colour change) reads real OHLC and is DISTORTED on synthetic bars.",
+         style = label.style_label_down, color = color.new(colWarn, 10),
+         textcolor = color.white, size = size.small)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §22  DASHBOARD
+//      [RULE-210..219 | CON-113 | 03_VISUAL_DESIGN_SPEC.md §11]
+//      ONE var table, created once, written only on the last bar.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+dashPos() =>
+    switch dashPosSel
+        "Top left"      => position.top_left
+        "Top center"    => position.top_center
+        "Top right"     => position.top_right
+        "Middle left"   => position.middle_left
+        "Middle right"  => position.middle_right
+        "Bottom left"   => position.bottom_left
+        "Bottom center" => position.bottom_center
+        => position.bottom_right
+
+dashSize() =>
+    dashSizeSel == "Tiny" ? size.tiny : dashSizeSel == "Small" ? size.small : size.normal
+
+var table dash = table.new(dashPos(), 2, 22, border_width = 1,
+     frame_color = color.new(color.gray, 70), frame_width = 1,
+     border_color = color.new(color.gray, 85))
+
+row(int r, string k, string v, color vc) =>
+    table.cell(dash, 0, r, k, text_size = dashSize(), text_halign = text.align_left,
+         text_color = color.new(color.gray, 20), text_font_family = font.family_monospace)
+    table.cell(dash, 1, r, v, text_size = dashSize(), text_halign = text.align_right,
+         text_color = vc, text_font_family = font.family_monospace)
+
+// Count of approximations contributing to the current picture (named in Debug Mode).
+int approxCount = (gateWithFunnel ? 2 : 0) + 1 + (isElephant ? 1 : 0) + (isTail ? 1 : 0) +
+     (isSurge ? 1 : 0) + (near20 ? 1 : 0) + (spaceExtreme ? 1 : 0) + 1
+
+// [RULE-218 | CON-114 | SRC-240 p.21 | DIRECT / EXACT_TRANSLATION]
+// Which lesson runs on which chart. ADVISORY ONLY — it never blocks, because C3/SRC-022 states
+// the framework itself is timeframe-agnostic.
+tfLesson() =>
+    string tf = timeframe.period
+    tf == "M"   ? "monthly -> V5" :
+     tf == "240" ? "4-hour -> V3" :
+     tf == "60"  ? "1-hour -> V3" :
+     (tf == "D" or tf == "W") ? "daily/weekly -> V1" :
+     tf == "5" ? "5-min -> V2 V6" :
+     tf == "2" ? "2-min -> V2 V4 V6 V7" : tf + " -> not mapped in the source"
+
+if barstate.islast and not showDash
+    table.clear(dash, 0, 0, 1, 21)
+
+if showDash and barstate.islast
+    string aM    = showApproxMarks ? " ~" : ""
+    string sName = stateName(state) + (narrowGrade != NG_NONE ? " " + gradeName(narrowGrade) : "")
+
+    row(0, "VELEZ MARKET MAP", syminfo.ticker + " " + timeframe.period + vMark(), colNeut)
+    row(1, "STATE", not ready ? "WARMING UP " + str.tostring(bar_index) + "/" +
+         str.tostring(warmupNeeded) : sName + aM + "  gap " + str.tostring(gapN, "#.##"),
+         stateColor)
+    row(2, "POSITION", not ready ? "-" : (pos > 0 ? "+" : "") + str.tostring(pos) + aM +
+         (posAbs == 1 ? "  (POSITION 1)" : plutoLand ? "  (PLUTO LAND)" :
+          insideState ? "  (IN THE STATE)" : ""),
+         posAbs == 1 ? colBull : plutoLand ? colWarn : colNeut)
+    row(3, "TREND", (trendDir == DIR_LONG ? "20 up" : trendDir == DIR_SHORT ? "20 down" :
+         "20 flat") + aM + "   200 " + (flat200 ? "flat" : "sloping"),
+         trendDir == DIR_LONG ? colBull : trendDir == DIR_SHORT ? colBear : colNeut)
+    row(4, "LOCATION", location == DIR_LONG ? "ABOVE" : location == DIR_SHORT ? "BELOW" :
+         "INSIDE", colNeut)
+    row(5, "MODE BY STATE", modeByState, colNeut)
+    row(6, "EVENT", anyEvent ? ev.lbl + aMark(ev.approx) : "-",
+         candDir == DIR_LONG ? colBull : candDir == DIR_SHORT ? colBear : colNeut)
+    row(7, "LEG / PUSH", "LEG " + str.tostring(legCount + 1) +
+         (lcActive ? "  PUSH " + str.tostring(lc.pushes) + cMark() : ""), colNeut)
+    row(8, "SETUP", isSurge ? "SURGE OFF 200" + aM : isIgnite ? "IGNITE" + aM :
+         isPullback ? "PULLBACK" + aM : (obEntryLong or obEntryShort) ? "OPENING BELL" :
+         (hiddenGreenShort or hiddenRedLong) ? "HIDDEN" + aM : isDual ? "DUAL SPACE" + aM : "-",
+         colNeut)
+    row(9, "CONFLUENCE", qScore > 0 ? qTier + " " + tierPips(qScore) + " [impl]" : "-",
+         qScore >= 10 ? colBull : colNeut)
+    row(10, "EXTENSION", "space p" + str.tostring(nz(spaceRank, 0), "#") +
+         (spaceExtreme ? "  EXTREME" + aM : "") + (threeFingers ? "  3 FINGERS" + aM : ""),
+         (spaceExtreme or threeFingers) ? colWarn : colNeut)
+    row(11, "VIRTUAL LIFECYCLE", lcName(lc.state) + vMark(),
+         lc.state == LC_LONG_ACTIVE ? colBull : lc.state == LC_SHORT_ACTIVE ? colBear : colNeut)
+    row(12, "ACTIVE STOP", (lcActive and not na(lc.stop)) ?
+         str.tostring(lc.stop, format.mintick) + "  " + stopMethodName(lc.stopMethod) : "-",
+         colNeut)
+    row(13, "ADD", not lcActive ? "-" : lc.adds == 0 ? "DUE - first colour change" :
+         str.tostring(lc.adds) + " of " + str.tostring(maxAdds), colNeut)
+    row(14, "EXIT CONTEXT", lc.exitReason != "" ? lc.exitReason :
+         anyExitContext ? exitReason : "-",
+         (lc.exitReason != "" or anyExitContext) ? colWarn : colNeut)
+    row(15, "SCALP / TRADE", enRetrace ? scalpVerdict : "-", colNeut)
+    row(16, "FIDELITY", strictOn ? "STRICT SOURCE ONLY" : expOn ? "+ EXPERIMENTAL" :
+         "SOURCE + APPROXIMATIONS", colNeut)
+    row(17, "APPROX ACTIVE", str.tostring(approxCount) + "  (named in Debug)", colWarn)
+    row(18, "TF LESSON", tfLesson(), colNeut)
+    row(19, "HISTORY", "last " + str.tostring(historyCap) + " bars  trimmed " +
+         str.tostring(trimmedCount), colNeut)
+    row(20, "HTF 20", useHtf ? (htfDir == DIR_LONG ? "up" : htfDir == DIR_SHORT ? "down" :
+         "flat") + " (" + htfTf + ")" + cMark() : "off", colNeut)
+    row(21, "CHART TYPE", nonStandardChart ? "NON-STANDARD - distorted" : "standard",
+         nonStandardChart ? colWarn : colNeut)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §23  DEBUG PANEL
+//      [RULE-230..239 | CON-112/113/121 | 03_VISUAL_DESIGN_SPEC.md §12]
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+var table dbg = table.new(position.bottom_left, 1, 14, border_width = 1,
+     frame_color = color.new(color.gray, 70), frame_width = 1,
+     border_color = color.new(color.gray, 88))
+
+blockerText(int m) =>
+    m == 0 ? "none" :
+     (hasBit(m, BLK_NO_EVENT)      ? "NO EVENT (SRC-025) · "          : "") +
+     (hasBit(m, BLK_INSIDE_STATE)  ? "INSIDE THE STATE (SRC-075) · "  : "") +
+     (hasBit(m, BLK_PLUTO)         ? "PLUTO LAND (SRC-079) · "        : "") +
+     (hasBit(m, BLK_AGAINST_20)    ? "AGAINST THE 20 (SRC-224) · "    : "") +
+     (hasBit(m, BLK_DUMB_STOP)     ? "DUMB STOP (SRC-077) · "         : "") +
+     (hasBit(m, BLK_LADDER_SKIP)   ? "STOP LADDER RUNG 3 (SRC-197) · ": "") +
+     (hasBit(m, BLK_THREE_FINGERS) ? "THREE FINGERS (SRC-292) · "     : "") +
+     (hasBit(m, BLK_LIFECYCLE)     ? "LIFECYCLE ACTIVE (platform) · " : "") +
+     (hasBit(m, BLK_WARMUP)        ? "WARMING UP (platform) · "       : "") +
+     (hasBit(m, BLK_HTF_OPPOSED)   ? "HTF OPPOSED [exp] · "           : "") +
+     (hasBit(m, BLK_CONFLICT)      ? "CONFLICTING SETUPS (S6) · "     : "")
+
+dbgRow(int r, string t, color c) =>
+    table.cell(dbg, 0, r, t, text_size = size.tiny, text_halign = text.align_left,
+         text_color = c, text_font_family = font.family_monospace)
+
+if barstate.islast and not modeDebug
+    table.clear(dbg, 0, 0, 0, 13)
+
+if modeDebug and barstate.islast
+    dbgRow(0, "FUNNEL TRACE · bar -" + str.tostring(dbgOffset) + " · build velez-map/1.0.0",
+         colNeut)
+    dbgRow(1, "1 STATE     " + stateName(state) + " " + gradeName(narrowGrade) + "   gap " +
+         str.tostring(gapN, "#.##") + " vs narrow<=" + str.tostring(narrowMult) + " wide>=" +
+         str.tostring(wideMult) + "   [CON-010 / SRC-051 p.8]", isNarrow ? colBull : colNeut)
+    dbgRow(2, "2 POSITION  " + (pos > 0 ? "+" : "") + str.tostring(pos) + "   dUp " +
+         str.tostring(dUp, "#.##") + " dDn " + str.tostring(dDn, "#.##") + "  p1<=" +
+         str.tostring(p1Max) + " p2<=" + str.tostring(p2Max) + "   [CON-020 / SRC-071 p.10]",
+         posAbs == 1 ? colBull : colNeut)
+    dbgRow(3, "3 EVENT     " + (anyEvent ? ev.lbl : "none") + "   rng x" +
+         str.tostring(nz(safeDiv(rng, avgRng), 0), "#.##") + " vs " + str.tostring(eleRangeMult) +
+         "   tailDn " + str.tostring(tailDnFrac, "#.##") + "/" + str.tostring(tailMinFrac) +
+         "   [CON-030/032/034]", anyEvent ? colBull : colMute)
+    dbgRow(4, "GATES       " + (gatesPass ? "ALL PASS" : "BLOCKED") +
+         (strictOn ? "   (STRICT: state/position do NOT gate)" : ""),
+         gatesPass ? colBull : colWarn)
+    dbgRow(5, showBlockers ? "BLOCKERS    " + blockerText(blockers) : "", colWarn)
+    dbgRow(6, "QUALITY     " + str.tostring(qScore) + " -> " + qTier + "   [impl layer - NOT a " +
+         "Velez taxonomy; full weight table in 02_CONCEPT_TO_CODE_MAP.md W23]", colNeut)
+    dbgRow(7, "CONFIRM     event=CONFIRMED(bar close) · pivots=CONFIRMED-LATER" + cMark() +
+         " (pivLen " + str.tostring(pivLen) + ")" +
+         (allowProvisional ? " · PROVISIONAL PREVIEW ON (may repaint)" : ""), colNeut)
+    dbgRow(8, "MODELS      state=" + stateBasisSel + " · pos=" + posBasisSel + " · elephant=" +
+         eleModelSel + " · cc=" + ccRefSel + " · near20=" + near20Sel +
+         (expOn ? " · EXPERIMENTAL ON" : ""), colNeut)
+    dbgRow(9, "APPROX (~)  state · position · MA band · flatness · elephant size · tail ratio · " +
+         "near-20 · clear-left · reset · push · space rank · deep-drop severity", colWarn)
+    dbgRow(10, showCheck ? "CHECKLIST   " +
+         ((isNarrow or isWide) ? "[x]" : "[ ]") + " state  " +
+         ((posAbs == 1 or posAbs == 2) ? "[x]" : "[ ]") + " position  " +
+         (anyEvent ? "[x]" : "[ ]") + " event  " +
+         (isTail ? "[x]" : "[-]") + " tail valid  " +
+         ((candDir == trendDir and candDir != DIR_NONE) ? "[x]" : "[ ]") + " with the 20  " +
+         (lossSet ? "[x]" : "[ ] UNSET") + " max loss   [SRC-028 p.66]" : "", colNeut)
+    dbgRow(11, showCount ? "RESOURCES   labels " +
+         str.tostring(array.size(evLabels) + array.size(lcLabels) + array.size(ctxLabels)) +
+         "/500 · lines " + str.tostring(array.size(evLines) + array.size(ctxLines)) +
+         "/500 · boxes " + str.tostring(array.size(ctxBoxes)) + "/500 · trimmed " +
+         str.tostring(trimmedCount) : "", colNeut)
+    dbgRow(12, (showSnowman and isSnowman) ? "DIAGNOSTIC  SNOWMAN (NOT A TAIL BAR) - body " +
+         str.tostring(bodyFrac, "#.##") + " of range. The source names this counterfeit " +
+         "explicitly and says it does not count (SRC-097 p.12)." : "", colWarn)
+    dbgRow(13, showClaims ? "SOURCE CLAIMS (attributed, NOT outputs): 87% open-above-narrow · " +
+         "85% state weighting · 85% of losses against the 20 · 80% elephant follow-through · " +
+         "8/10 opening bell · 2-3/10 swing failures · 9/6/2/1 of 10 retracement. All " +
+         "self-reported, unpublished, no stated sample. SRC-004 p.2 / SRC-273 p.20." : "", colMute)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// §24  ALERTS
+//      [RULE-220..229 | CON-120 | 04_INDICATOR_ARCHITECTURE.md §9]
+//      Transitions only, never persistent states. Confirmed-bar by default.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+bool gateA = ready and (alertConfirmedOnly ? barstate.isconfirmed : true)
+
+var int lastEvAlert = na
+var int lastSuAlert = na
+var int lastLcAlert = na
+var int lastCxAlert = na
+
+coolOk(int last) =>
+    alertCooldown == 0 or na(last) or (bar_index - last) >= alertCooldown
+
+bool aEvent = alEvents and gateA and anyEvent and coolOk(lastEvAlert)
+if aEvent
+    lastEvAlert := bar_index
+bool aSetup = alSetups and gateA and (isSurge or isIgnite or isPullback or isDual or obEntryLong or
+     obEntryShort or hiddenGreenShort or hiddenRedLong or gapTriggerUp or gapTriggerDn) and
+     coolOk(lastSuAlert)
+if aSetup
+    lastSuAlert := bar_index
+bool aLife = alLifecycle and gateA and (rise(lcActive) or addTrigger or stopMoved or lcCompleted or
+     lcInvalidated) and coolOk(lastLcAlert)
+if aLife
+    lastLcAlert := bar_index
+bool aCtx = alContext and gateA and (stateChanged or rise(anyExitContext) or rise(spaceExtreme)) and
+     coolOk(lastCxAlert)
+if aCtx
+    lastCxAlert := bar_index
+
+// ── Static alert conditions (messages must be const strings) ──────────────────────────────────
+alertcondition(alEvents and gateA and rise(comboBull or comboBear), "Elephant + colour change",
+     "VELEZ MAP: elephant bar AND colour change on one bar. Study tool - not a recommendation.")
+alertcondition(alEvents and gateA and rise(isElephant), "Elephant bar",
+     "VELEZ MAP: elephant bar (~approximate size threshold). Study tool - not a recommendation.")
+alertcondition(alEvents and gateA and rise(isTail), "Tail bar",
+     "VELEZ MAP: tail bar (bottoming or topping). Study tool - not a recommendation.")
+alertcondition(alEvents and gateA and rise(isColourChange), "Colour change",
+     "VELEZ MAP: colour change - one colour took out the BODY extreme of an opposite-coloured " +
+     "bar. Study tool - not a recommendation.")
+alertcondition(alEvents and gateA and rise(isTakeout), "Red / green bar takeout",
+     "VELEZ MAP: little red/green bar takeout. Study tool - not a recommendation.")
+alertcondition(alContext and gateA and stateChanged, "State change",
+     "VELEZ MAP: market state changed (~approximate thresholds). Study tool.")
+alertcondition(alContext and gateA and rise(narrowGrade == NG_G1), "Narrow grade 1 formed",
+     "VELEZ MAP: grade-1 narrow state - all three items flat (~approximate flatness). Study tool.")
+alertcondition(alSetups and gateA and rise(isSurge), "Surge off the 200",
+     "VELEZ MAP: surge off a flat 200 with clear space to the left (~approximate). Study tool.")
+alertcondition(alSetups and gateA and rise(isIgnite), "Igniting swing",
+     "VELEZ MAP: igniting move out of a sleepy state (~approximate). Study tool.")
+alertcondition(alSetups and gateA and rise(isPullback), "Pullback swing",
+     "VELEZ MAP: pullback colour change at or near the 20 (~approximate). Study tool.")
+alertcondition(alSetups and gateA and rise(obEntryLong or obEntryShort), "Opening-bell entry",
+     "VELEZ MAP: opening-bell mark crossed. Every price was defined before the open. Study tool.")
+alertcondition(alSetups and gateA and rise(hiddenGreenShort or hiddenRedLong), "Hidden green/red",
+     "VELEZ MAP: hidden green/red erasure - BAR-CLOSE FORM ONLY. The source's intrabar erasure " +
+     "instant is not observable at bar close. Study tool.")
+alertcondition(alSetups and gateA and rise(isDual), "Dual space reversal",
+     "VELEZ MAP: dual space reversal setup (~approximate). Study tool.")
+alertcondition(alSetups and gateA and rise(gapTriggerUp or gapTriggerDn), "Gap-fill bar-two",
+     "VELEZ MAP: gap-fill bar-two trigger. Study tool - not a recommendation.")
+alertcondition(alSetups and gateA and rise(isDeepDrop), "Deep drop",
+     "VELEZ MAP: deep drop past the halfway point (~approximate severity; confirmed later). " +
+     "Study tool.")
+alertcondition(alSetups and gateA and rise(lowerTop or higherBottom), "Market Law Four candidate",
+     "VELEZ MAP: lower top / higher bottom (~approximate; confirmed later). Study tool.")
+alertcondition(alSetups and gateA and rise(firstWarningDrop), "First warning drop",
+     "VELEZ MAP: pullback deeper than any before it in this sequence (~approximate; confirmed " +
+     "later). Study tool.")
+alertcondition(alLifecycle and gateA and rise(lcActive), "Virtual entry",
+     "VELEZ MAP: VIRTUAL methodology lifecycle opened. No order, no fill, no position. Study tool.")
+alertcondition(alLifecycle and gateA and addTrigger, "Virtual add",
+     "VELEZ MAP: VIRTUAL add - first colour change after entry (the source calls adding " +
+     "mandatory). No order, no fill. Study tool.")
+alertcondition(alLifecycle and gateA and stopMoved, "Virtual stop moved",
+     "VELEZ MAP: VIRTUAL trailing reference rolled to a more protective level. Study tool.")
+alertcondition(alLifecycle and gateA and lcCompleted, "Virtual stop-out",
+     "VELEZ MAP: VIRTUAL lifecycle reached its stop reference. No fill is implied. Study tool.")
+alertcondition(alContext and gateA and rise(exitThirdPush), "Exit context: third push",
+     "VELEZ MAP: third push counted (~approximate; confirmed later). Study tool.")
+alertcondition(alContext and gateA and rise(exitNarrowToWide), "Exit context: narrow to wide",
+     "VELEZ MAP: state went narrow -> wide. The source calls this an exit signal by itself. " +
+     "Study tool.")
+alertcondition(alContext and gateA and rise(spaceExtreme), "Space extreme (pare context)",
+     "VELEZ MAP: price-to-20 space at a historical extreme (~approximate). Study tool.")
+alertcondition(alContext and gateA and rise(qScore >= 10), "Confluence: high quality or better",
+     "VELEZ MAP: implementation-defined confluence reached HIGH QUALITY or better. This is NOT " +
+     "a Velez taxonomy. Study tool - not a recommendation.")
+alertcondition(alBlocked and gateA and anyEvent and not gatesPass, "Blocked candidate",
+     "VELEZ MAP: a qualifying event was blocked by a gate. See Debug Mode for the reason. " +
+     "Study tool.")
+
+// ── Dynamic payload alert ─────────────────────────────────────────────────────────────────────
+// Requires a TradingView alert created on "Any alert() function call".
+if (aEvent or aSetup or aLife) and (anyEvent or lcCompleted or addTrigger)
+    string msg = "VELEZ MAP | " + syminfo.ticker + " " + timeframe.period + " | " +
+         (anyEvent ? ev.lbl : lc.exitReason) + " | dir=" +
+         (candDir == DIR_LONG ? "L" : candDir == DIR_SHORT ? "S" : "-") + " | px=" +
+         str.tostring(close, format.mintick) +
+         "\nstate=" + stateName(state) + " " + gradeName(narrowGrade) + aMark(true) +
+         " pos=" + str.tostring(pos) + aMark(true) + " trend=" +
+         (trendDir == DIR_LONG ? "20 up" : trendDir == DIR_SHORT ? "20 down" : "20 flat") +
+         "\nsetup=" + (isSurge ? "SURGE OFF 200" : isIgnite ? "IGNITE" :
+              isPullback ? "PULLBACK" : "-") + " quality=" + qTier + " [impl]" +
+         "\nstop=" + ((lcActive and not na(lc.stop)) ?
+              str.tostring(lc.stop, format.mintick) + " " + stopMethodName(lc.stopMethod) : "-") +
+         " fidelity=" + (strictOn ? "STRICT" : expOn ? "+EXPERIMENTAL" : "SOURCE+APPROX") +
+         " confirm=" + (alertConfirmedOnly ? "CONFIRMED" : "PROVISIONAL") +
+         "\nNOT A RECOMMENDATION - study tool. No order, no fill, no position, no performance " +
+         "claim, no endorsement."
+    alert(msg, alert.freq_once_per_bar_close)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// END OF SCRIPT
+// See 06_RULE_COVERAGE_AUDIT.md for forward/reverse traceability and 07_QA_REVIEW.md for the
+// verification status. Static review was performed; TradingView compilation and live-chart
+// verification were NOT performed in the authoring environment.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
