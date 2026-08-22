@@ -20,6 +20,9 @@ in the indicator book and the reference charts.
 | `pine/regime_volume.pine` | sub-pane | — | The `Vol` pane in the suite palette |
 | `pine/ma_stack.pine` | overlay | — | EMA 8/21/34 over SMA 50/100/200, labelled at the right edge, SMA 200 tinted by regime |
 
+MA Stack is your own script, not part of the Trade Daddy suite — it lives here so it is
+versioned alongside everything else on the chart.
+
 ## Install
 
 Pine Editor → *Open* → *New indicator* → paste one file → **Save** → **Add to chart**.
@@ -169,10 +172,21 @@ labels each BULL, BEAR, or NEUTRAL. Neutral means momentum and trend disagree on
 timeframe — the chop warning.
 
 ### MA Stack
+Not part of the suite — your own script, kept here so it is versioned with the rest.
+
 Six averages on price — EMA 8/21/34 as the fast layer, SMA 50/100/200 as the slow one —
 each tagged with a label at the right edge. SMA 200 is drawn heavier and, with *SMA 200
 Regime Bias* on, takes the bull colour while price closes above it. Everything can run on a
 higher timeframe through the *Calculation Timeframe* input.
+
+**The fade** runs right to left: solid at the live edge, thinning out as the lines travel
+back into history, so the working end of the stack reads first and old crosses sit back in
+the chart. *Visible range* (default) spans the gradient across whatever is on screen — it
+re-scales as you zoom and follows you when you scroll back, because reading the chart's
+visible-range variables makes TradingView recalculate the script on every scroll and zoom.
+*Fixed bars* measures it back from the last bar over a set number of bars instead, so the
+faded region stays put. *Fade curve* above 1 keeps the near bars solid and does the fading
+further out; below 1 starts dropping away immediately.
 
 **Switching an average off:** use the toggles in the *Visibility* group of the **Inputs**
 tab, not the checkboxes in the Style tab. Pine cannot read Style-tab visibility — that

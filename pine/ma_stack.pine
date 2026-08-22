@@ -1,7 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Trade Daddy — MA STACK
+//  MA STACK
 //  Six moving averages on one price pane: EMA 8/21/34 as the fast layer, SMA
 //  50/100/200 as the slow one, each tagged with a label at the right edge.
+//  The lines are solid at the right edge and fade out as they run back into
+//  history, so the live end of the stack reads first.
 //  ── SWITCHING AN AVERAGE OFF ────────────────────────────────────────────────
 //  Use the toggles in the *Visibility* group of the INPUTS tab, not the
 //  checkboxes in the Style tab. Pine cannot read Style-tab visibility — that
@@ -40,11 +42,20 @@ bull_col   = input.color(#e6b800, "Bull Regime Color",   group="Colors")
 bear_col   = input.color(#707070, "Bear Regime Color",   group="Colors")
 
 // ── Style ─────────────────────────────────────────────────────────────────────
-fade_enabled = input.bool(true,  "Fade opacity by timeframe", group="Style")
-min_opacity  = input.int(45, "Minimum Opacity (0 = solid)", minval=0, maxval=100, group="Style")
 def_width    = input.int(1, "Default Line Width", minval=1, group="Style")
 sma200_width = input.int(2, "SMA 200 Width", minval=1, group="Style")
 show_regime  = input.bool(true, "SMA 200 Regime Bias", group="Style")
+
+// ── Fade ──────────────────────────────────────────────────────────────────────
+fade_enabled = input.bool(true, "Fade the lines back into history", group="Fade")
+fade_mode    = input.string("Visible range", "Fade across", options=["Visible range", "Fixed bars"], group="Fade",
+     tooltip="Visible range: the gradient always spans what you are looking at, so it re-scales as you zoom and follows you when you scroll back. Fixed bars: the gradient is measured back from the last bar over a set number of bars.")
+fade_bars    = input.int(400, "Fade length (bars)", minval=1, group="Fade",
+     tooltip="Fixed bars mode only. Longer = slower fade.")
+fade_near    = input.int(0,  "Transparency at the right edge", minval=0, maxval=100, group="Fade")
+fade_far     = input.int(85, "Transparency at the far end",    minval=0, maxval=100, group="Fade")
+fade_curve   = input.float(1.5, "Fade curve", minval=0.2, maxval=5.0, step=0.1, group="Fade",
+     tooltip="Above 1 holds the line solid through the near bars and does most of the fading at the far end. Below 1 starts fading immediately. 1 is a straight ramp.")
 
 // ── Labels ────────────────────────────────────────────────────────────────────
 show_lbl     = input.bool(true, "Show Labels on Right", group="Labels")
@@ -63,8 +74,23 @@ sma200= request.security(syminfo.tickerid, tf, ta.sma(close, sma200_len))
 bull_regime = close > sma200
 sma200_color = show_regime ? (bull_regime ? bull_col : bear_col) : sma200_col
 
-// Opacity
-opacity_val = fade_enabled ? math.max(min_opacity, min_opacity + (100 - min_opacity) * (1 - bar_index / 800)) : 0
+// ── Fade ramp ─────────────────────────────────────────────────────────────────
+//  age = 0 at the newest bar in view, 1 at the oldest. In "Visible range" the
+//  span comes from the chart viewport, so reading chart.*_visible_bar_time makes
+//  TradingView recalculate on every scroll and zoom and the gradient re-fits
+//  itself to whatever is on screen
+//  the 1.0 * is load-bearing: bar indices and timestamps are ints, and int / int
+//  truncates in Pine, which would flatten the ramp to zero
+vis_span = nz(chart.right_visible_bar_time - chart.left_visible_bar_time, 0)
+age_vis  = vis_span > 0 ? nz(1.0 * (chart.right_visible_bar_time - time) / vis_span, 0.0) : 0.0
+age_fix  = 1.0 * (last_bar_index - bar_index) / fade_bars
+age_raw  = fade_mode == "Fixed bars" ? age_fix : age_vis
+age      = math.min(1.0, math.max(0.0, age_raw))
+
+//  the curve shapes how the ramp gets there — the fade is gentle through the
+//  near bars and steepens into the distance when the exponent is above 1
+fade_t      = fade_near + (fade_far - fade_near) * math.pow(age, fade_curve)
+opacity_val = fade_enabled ? fade_t : fade_near
 op(c) => color.new(c, opacity_val)
 
 // ── Plots ─────────────────────────────────────────────────────────────────────
