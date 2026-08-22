@@ -18,8 +18,7 @@ in the indicator book and the reference charts.
 | `pine/silver_flow.pine` | sub-pane | ✅ | Whale flow (gold) vs reactive money (white), 0-100 with a control zone |
 | `pine/sauls_watch.pine` | overlay | — | Multi-timeframe BULL / BEAR / NEUTRAL strip from the Gold Regime engine |
 | `pine/regime_volume.pine` | sub-pane | — | The `Vol` pane in the suite palette |
-
-MA Stack is not included — you already have it.
+| `pine/ma_stack.pine` | overlay | — | EMA 8/21/34 over SMA 50/100/200, labelled at the right edge, SMA 200 tinted by regime |
 
 ## Install
 
@@ -27,7 +26,7 @@ Pine Editor → *Open* → *New indicator* → paste one file → **Save** → *
 Repeat per file. Overlay scripts land on price; the rest open their own pane.
 
 Reference layout, top to bottom: price (Gold Regime + Carbon Structure + Control Line +
-Uranium Band + Volume Planes + Saul's Watch + your MA Stack), Vol, Iron Momentum,
+Uranium Band + Volume Planes + Saul's Watch + MA Stack), Vol, Iron Momentum,
 Neon Stack, Silver Flow.
 
 ## Matching the reference charts
@@ -36,7 +35,7 @@ Neon Stack, Silver Flow.
 |---|---|
 | Gold/slate cloud hugging price | Carbon Structure fills the space between two double-smoothed baselines — one fill, gold when fast leads, slate when it doesn't |
 | Cloud pinches to a waist and flips colour | The baselines converging and crossing; a small ATR floor keeps the waist visible |
-| Faint lines running through the cloud | Your own MA Stack showing through the transparent fill — Carbon Structure draws no inner lines |
+| Faint lines running through the cloud | MA Stack showing through the transparent fill — Carbon Structure draws no inner lines |
 | Dusty-rose line running through price | Control Line, SMA 50 by default with light extra smoothing |
 | Cyan stars well below the bars, magenta well above | Gold Regime, *Star offset (ATR)* — 2.0 by default |
 | Dark green panel with a white rail top and bottom | Uranium Band. The panel is drawn behind the chart so candles sit on top of it; no side borders. It extends while price stays in balance and stops at the confirmed break |
@@ -168,6 +167,17 @@ Dragon values — banker RSI 50 base 50 at 1.5, hot money RSI 40 base 30 at 0.7.
 Runs the Gold Regime engine on five configurable timeframes via `request.security` and
 labels each BULL, BEAR, or NEUTRAL. Neutral means momentum and trend disagree on that
 timeframe — the chop warning.
+
+### MA Stack
+Six averages on price — EMA 8/21/34 as the fast layer, SMA 50/100/200 as the slow one —
+each tagged with a label at the right edge. SMA 200 is drawn heavier and, with *SMA 200
+Regime Bias* on, takes the bull colour while price closes above it. Everything can run on a
+higher timeframe through the *Calculation Timeframe* input.
+
+**Switching an average off:** use the toggles in the *Visibility* group of the **Inputs**
+tab, not the checkboxes in the Style tab. Pine cannot read Style-tab visibility — that
+switch is applied by TradingView after the script has run, so it hides the plotted line and
+leaves the label sitting there. The Visibility toggles hide the line and its label together.
 
 ## If an oscillator lands on the price pane
 

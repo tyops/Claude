@@ -1,0 +1,107 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  Trade Daddy — MA STACK
+//  Six moving averages on one price pane: EMA 8/21/34 as the fast layer, SMA
+//  50/100/200 as the slow one, each tagged with a label at the right edge.
+//  ── SWITCHING AN AVERAGE OFF ────────────────────────────────────────────────
+//  Use the toggles in the *Visibility* group of the INPUTS tab, not the
+//  checkboxes in the Style tab. Pine cannot read Style-tab visibility — that
+//  switch is applied by TradingView after the script runs, so it hides the line
+//  and leaves the label behind. The Visibility toggles hide both together.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("MA Stack", shorttitle="MA Stack", overlay=true, max_labels_count=500)
+
+// ── Visibility ────────────────────────────────────────────────────────────────
+show_ema8   = input.bool(true, "EMA 8",   group="Visibility", inline="v1")
+show_ema21  = input.bool(true, "EMA 21",  group="Visibility", inline="v1")
+show_ema34  = input.bool(true, "EMA 34",  group="Visibility", inline="v1")
+show_sma50  = input.bool(true, "SMA 50",  group="Visibility", inline="v2")
+show_sma100 = input.bool(true, "SMA 100", group="Visibility", inline="v2")
+show_sma200 = input.bool(true, "SMA 200", group="Visibility", inline="v2")
+
+// ── Lengths ───────────────────────────────────────────────────────────────────
+ema8_len   = input.int(8,   "EMA 8 Length",  group="Lengths")
+ema21_len  = input.int(21,  "EMA 21 Length", group="Lengths")
+ema34_len  = input.int(34,  "EMA 34 Length", group="Lengths")
+sma50_len  = input.int(50,  "SMA 50 Length", group="Lengths")
+sma100_len = input.int(100, "SMA 100 Length",group="Lengths")
+sma200_len = input.int(200, "SMA 200 Length",group="Lengths")
+
+// ── Timeframe ─────────────────────────────────────────────────────────────────
+use_tf = input.timeframe("", "Calculation Timeframe (blank = chart)", group="Timeframe")
+
+// ── Colors ────────────────────────────────────────────────────────────────────
+ema_col    = input.color(#e6b800, "EMA Color (8/21/34)", group="Colors")
+sma50_col  = input.color(#9e9e9e, "SMA 50 Color",        group="Colors")
+sma100_col = input.color(#707070, "SMA 100 Color",       group="Colors")
+sma200_col = input.color(#e6b800, "SMA 200 Color",       group="Colors")
+
+bull_col   = input.color(#e6b800, "Bull Regime Color",   group="Colors")
+bear_col   = input.color(#707070, "Bear Regime Color",   group="Colors")
+
+// ── Style ─────────────────────────────────────────────────────────────────────
+fade_enabled = input.bool(true,  "Fade opacity by timeframe", group="Style")
+min_opacity  = input.int(45, "Minimum Opacity (0 = solid)", minval=0, maxval=100, group="Style")
+def_width    = input.int(1, "Default Line Width", minval=1, group="Style")
+sma200_width = input.int(2, "SMA 200 Width", minval=1, group="Style")
+show_regime  = input.bool(true, "SMA 200 Regime Bias", group="Style")
+
+// ── Labels ────────────────────────────────────────────────────────────────────
+show_lbl     = input.bool(true, "Show Labels on Right", group="Labels")
+label_offset = input.int(6, "Label Offset (bars)", minval=0, group="Labels")
+
+// ── Calculations ──────────────────────────────────────────────────────────────
+tf = use_tf == "" ? timeframe.period : use_tf
+
+ema8  = request.security(syminfo.tickerid, tf, ta.ema(close, ema8_len))
+ema21 = request.security(syminfo.tickerid, tf, ta.ema(close, ema21_len))
+ema34 = request.security(syminfo.tickerid, tf, ta.ema(close, ema34_len))
+sma50 = request.security(syminfo.tickerid, tf, ta.sma(close, sma50_len))
+sma100= request.security(syminfo.tickerid, tf, ta.sma(close, sma100_len))
+sma200= request.security(syminfo.tickerid, tf, ta.sma(close, sma200_len))
+
+bull_regime = close > sma200
+sma200_color = show_regime ? (bull_regime ? bull_col : bear_col) : sma200_col
+
+// Opacity
+opacity_val = fade_enabled ? math.max(min_opacity, min_opacity + (100 - min_opacity) * (1 - bar_index / 800)) : 0
+op(c) => color.new(c, opacity_val)
+
+// ── Plots ─────────────────────────────────────────────────────────────────────
+//  A hidden average is plotted as na, so the line and its status-line value both
+//  disappear instead of being painted in a transparent colour
+plot(show_ema8  ? ema8  : na, "EMA 8",  color=op(ema_col), linewidth=def_width)
+plot(show_ema21 ? ema21 : na, "EMA 21", color=op(ema_col), linewidth=def_width)
+plot(show_ema34 ? ema34 : na, "EMA 34", color=op(ema_col), linewidth=def_width)
+
+plot(show_sma50  ? sma50  : na, "SMA 50",  color=op(sma50_col),  linewidth=def_width)
+plot(show_sma100 ? sma100 : na, "SMA 100", color=op(sma100_col), linewidth=def_width)
+plot(show_sma200 ? sma200 : na, "SMA 200", color=op(sma200_color), linewidth=sma200_width)
+
+// ── Labels (White Text) ───────────────────────────────────────────────────────
+var label ema8_lbl  = na
+var label ema21_lbl = na
+var label ema34_lbl = na
+var label sma50_lbl = na
+var label sma100_lbl= na
+var label sma200_lbl= na
+
+//  Returns a fresh label, or na when the average is hidden — the caller deletes
+//  the previous one first, so switching a toggle off leaves nothing behind
+mk_lbl(show, y, txt, col) =>
+    show and not na(y) ? label.new(bar_index + label_offset, y, txt, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=col, textcolor=color.white, size=size.small) : na
+
+if barstate.islast
+    label.delete(ema8_lbl)
+    label.delete(ema21_lbl)
+    label.delete(ema34_lbl)
+    label.delete(sma50_lbl)
+    label.delete(sma100_lbl)
+    label.delete(sma200_lbl)
+
+    ema8_lbl   := mk_lbl(show_lbl and show_ema8,   ema8,   "EMA 8",   color.new(ema_col, 20))
+    ema21_lbl  := mk_lbl(show_lbl and show_ema21,  ema21,  "EMA 21",  color.new(ema_col, 20))
+    ema34_lbl  := mk_lbl(show_lbl and show_ema34,  ema34,  "EMA 34",  color.new(ema_col, 20))
+    sma50_lbl  := mk_lbl(show_lbl and show_sma50,  sma50,  "SMA 50",  color.new(sma50_col, 35))
+    sma100_lbl := mk_lbl(show_lbl and show_sma100, sma100, "SMA 100", color.new(sma100_col, 35))
+    sma200_lbl := mk_lbl(show_lbl and show_sma200, sma200, "SMA 200", color.new(sma200_color, 20))
