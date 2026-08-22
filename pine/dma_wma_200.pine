@@ -1,0 +1,107 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  200 DMA / 200 WMA
+//  The two long lines on their own, pulled from their own timeframes so they sit
+//  in the same place on every chart: the 200-day average and the 200-week one,
+//  each tagged at the right edge. Same build as MA Stack — visibility toggles
+//  that take the label with the line, regime tint, right-to-left fade.
+//  ── SWITCHING A LINE OFF ────────────────────────────────────────────────────
+//  Use the toggles in the *Visibility* group of the INPUTS tab, not the
+//  checkboxes in the Style tab. Pine cannot read Style-tab visibility — that
+//  switch is applied by TradingView after the script runs, so it hides the line
+//  and leaves the label behind. The Visibility toggles hide both together.
+//  ── ON SHORT HISTORY ────────────────────────────────────────────────────────
+//  200 weekly bars is roughly four years. On a symbol younger than that the
+//  200 WMA has nothing to average and simply does not draw.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("200 DMA / 200 WMA", shorttitle="200 D/W", overlay=true, max_labels_count=500)
+
+// ── Visibility ────────────────────────────────────────────────────────────────
+show_dma = input.bool(true, "200 DMA", group="Visibility", inline="v1")
+show_wma = input.bool(true, "200 WMA", group="Visibility", inline="v1")
+
+// ── Lengths ───────────────────────────────────────────────────────────────────
+dma_len = input.int(200, "200 DMA Length", minval=1, group="Lengths")
+wma_len = input.int(200, "200 WMA Length", minval=1, group="Lengths")
+
+// ── Timeframe ─────────────────────────────────────────────────────────────────
+dma_tf = input.timeframe("D", "200 DMA Timeframe", group="Timeframe")
+wma_tf = input.timeframe("W", "200 WMA Timeframe", group="Timeframe")
+
+// ── Colors ────────────────────────────────────────────────────────────────────
+dma_col  = input.color(#e6b800, "200 DMA Color", group="Colors")
+wma_col  = input.color(#c4c9d0, "200 WMA Color", group="Colors")
+
+bull_col = input.color(#e6b800, "Bull Regime Color", group="Colors")
+bear_col = input.color(#707070, "Bear Regime Color", group="Colors")
+
+// ── Style ─────────────────────────────────────────────────────────────────────
+dma_width  = input.int(2, "200 DMA Width", minval=1, group="Style")
+wma_width  = input.int(3, "200 WMA Width", minval=1, group="Style")
+regime_dma = input.bool(true,  "Regime Bias — 200 DMA", group="Style",
+     tooltip="Tints the line with the bull colour while price closes above it, the bear colour while it closes below.")
+regime_wma = input.bool(false, "Regime Bias — 200 WMA", group="Style",
+     tooltip="Off by default so the weekly line keeps one constant colour and the two are never the same shade at once.")
+
+// ── Fade ──────────────────────────────────────────────────────────────────────
+fade_enabled = input.bool(true, "Fade the lines back into history", group="Fade")
+fade_mode    = input.string("Visible range", "Fade across", options=["Visible range", "Fixed bars"], group="Fade",
+     tooltip="Visible range: the gradient always spans what you are looking at, so it re-scales as you zoom and follows you when you scroll back. Fixed bars: the gradient is measured back from the last bar over a set number of bars.")
+fade_bars    = input.int(400, "Fade length (bars)", minval=1, group="Fade",
+     tooltip="Fixed bars mode only. Longer = slower fade.")
+fade_near    = input.int(0,  "Transparency at the right edge", minval=0, maxval=100, group="Fade")
+fade_far     = input.int(85, "Transparency at the far end",    minval=0, maxval=100, group="Fade")
+fade_curve   = input.float(1.5, "Fade curve", minval=0.2, maxval=5.0, step=0.1, group="Fade",
+     tooltip="Above 1 holds the line solid through the near bars and does most of the fading at the far end. Below 1 starts fading immediately. 1 is a straight ramp.")
+
+// ── Labels ────────────────────────────────────────────────────────────────────
+show_lbl     = input.bool(true, "Show Labels on Right", group="Labels")
+label_offset = input.int(6, "Label Offset (bars)", minval=0, group="Labels")
+
+// ── Calculations ──────────────────────────────────────────────────────────────
+dma = request.security(syminfo.tickerid, dma_tf, ta.sma(close, dma_len))
+wma = request.security(syminfo.tickerid, wma_tf, ta.sma(close, wma_len))
+
+dma_color = regime_dma ? (close > dma ? bull_col : bear_col) : dma_col
+wma_color = regime_wma ? (close > wma ? bull_col : bear_col) : wma_col
+
+// ── Fade ramp ─────────────────────────────────────────────────────────────────
+//  age = 0 at the newest bar in view, 1 at the oldest. In "Visible range" the
+//  span comes from the chart viewport, so reading chart.*_visible_bar_time makes
+//  TradingView recalculate on every scroll and zoom and the gradient re-fits
+//  itself to whatever is on screen
+//  the 1.0 * is load-bearing: bar indices and timestamps are ints, and int / int
+//  truncates in Pine, which would flatten the ramp to zero
+vis_span = nz(chart.right_visible_bar_time - chart.left_visible_bar_time, 0)
+age_vis  = vis_span > 0 ? nz(1.0 * (chart.right_visible_bar_time - time) / vis_span, 0.0) : 0.0
+age_fix  = 1.0 * (last_bar_index - bar_index) / fade_bars
+age_raw  = fade_mode == "Fixed bars" ? age_fix : age_vis
+age      = math.min(1.0, math.max(0.0, age_raw))
+
+//  the curve shapes how the ramp gets there — the fade is gentle through the
+//  near bars and steepens into the distance when the exponent is above 1
+fade_t      = fade_near + (fade_far - fade_near) * math.pow(age, fade_curve)
+opacity_val = fade_enabled ? fade_t : fade_near
+op(c) => color.new(c, opacity_val)
+
+// ── Plots ─────────────────────────────────────────────────────────────────────
+//  A hidden line is plotted as na, so the line and its status-line value both
+//  disappear instead of being painted in a transparent colour
+plot(show_dma ? dma : na, "200 DMA", color=op(dma_color), linewidth=dma_width)
+plot(show_wma ? wma : na, "200 WMA", color=op(wma_color), linewidth=wma_width)
+
+// ── Labels (White Text) ───────────────────────────────────────────────────────
+var label dma_lbl = na
+var label wma_lbl = na
+
+//  Returns a fresh label, or na when the line is hidden — the caller deletes the
+//  previous one first, so switching a toggle off leaves nothing behind
+mk_lbl(show, y, txt, col) =>
+    show and not na(y) ? label.new(bar_index + label_offset, y, txt, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=col, textcolor=color.white, size=size.small) : na
+
+if barstate.islast
+    label.delete(dma_lbl)
+    label.delete(wma_lbl)
+
+    dma_lbl := mk_lbl(show_lbl and show_dma, dma, "200 DMA", color.new(dma_color, 20))
+    wma_lbl := mk_lbl(show_lbl and show_wma, wma, "200 WMA", color.new(wma_color, 20))

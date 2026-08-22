@@ -19,9 +19,10 @@ in the indicator book and the reference charts.
 | `pine/sauls_watch.pine` | overlay | — | Multi-timeframe BULL / BEAR / NEUTRAL strip from the Gold Regime engine |
 | `pine/regime_volume.pine` | sub-pane | — | The `Vol` pane in the suite palette |
 | `pine/ma_stack.pine` | overlay | — | EMA 8/21/34 over SMA 50/100/200, labelled at the right edge, SMA 200 tinted by regime |
+| `pine/dma_wma_200.pine` | overlay | — | Just the two long ones: 200-day and 200-week, each from its own timeframe |
 
-MA Stack is your own script, not part of the Trade Daddy suite — it lives here so it is
-versioned alongside everything else on the chart.
+MA Stack and 200 DMA / 200 WMA are your own scripts, not part of the Trade Daddy suite —
+they live here so they are versioned alongside everything else on the chart.
 
 ## Install
 
@@ -192,6 +193,22 @@ further out; below 1 starts dropping away immediately.
 tab, not the checkboxes in the Style tab. Pine cannot read Style-tab visibility — that
 switch is applied by TradingView after the script has run, so it hides the plotted line and
 leaves the label sitting there. The Visibility toggles hide the line and its label together.
+
+### 200 DMA / 200 WMA
+Not part of the suite either — MA Stack cut down to the two lines that matter on the big
+picture, for when the six-average version is too much on the chart.
+
+The 200 DMA is a 200-period SMA requested from the **daily** timeframe, the 200 WMA a
+200-period SMA requested from the **weekly** one, so both sit at the same price no matter
+what timeframe the chart is on — put it on a 15-minute chart and the daily and weekly lines
+are still the daily and weekly lines. Both timeframes are inputs if you want something else.
+
+Regime tint is on for the daily line and off for the weekly by default, so the two are never
+the same shade at once: gold above, gray below on the daily; a constant pale line for the
+weekly. Visibility toggles, labels and the fade work exactly as they do in MA Stack.
+
+200 weekly bars is roughly four years, so on a symbol younger than that the weekly line has
+nothing to average and does not draw.
 
 ## If an oscillator lands on the price pane
 
