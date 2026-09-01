@@ -1,8 +1,19 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Trade Daddy — SAUL'S WATCH
 //  Compact multi-timeframe trend strip. Each timeframe is labelled BULL, BEAR or
-//  NEUTRAL from the Gold Regime engine, so the strip and the candles always tell
-//  the same story. Trade with the higher-timeframe bias, enter on the lower ones.
+//  NEUTRAL. Trade with the higher-timeframe bias, enter on the lower ones.
+//
+//  It reads the same two legs Gold Regime does — MACD against its signal, price
+//  against the trend baseline — but it resolves them differently on purpose, so
+//  do not expect the strip and the candles to agree bar for bar. Gold Regime
+//  LATCHES: once a regime is set it holds through disagreement until the
+//  opposite pair confirms, which is what keeps candles one colour through a
+//  pullback. This strip does NOT latch: when the two legs disagree it prints
+//  NEUTRAL, because a strip with no neutral state cannot warn you about chop,
+//  and that warning is the whole reason it exists.
+//
+//  So a chart with gold candles and a NEUTRAL 4H cell is not a bug. It is the
+//  regime still holding while that timeframe's legs have split.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Saul's Watch", overlay = true)

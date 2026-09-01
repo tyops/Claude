@@ -42,7 +42,7 @@ so leaving them on by default would give you a different chart than the referenc
 | Gold Regime | MACD 12/26/9, trend 50, confirmation 10, ATR 14, sensitivity 5, swing filter on (lookback 20, age 5), cooldown 8, push 0.25 ATR, sequential confirmation on (window 4) | RSI side, volume, VWAP side, internals, HTF sync, regime agreement, streak table |
 | Carbon Structure | Hull band, HMA, length **55**, lag 2 bars, cloud transparency 30 | Two-baseline mode, centre line, compression fade |
 | Control Line | SMA 50, extra smoothing 3, dusty rose `#C0707E`, width 3 | Side tinting |
-| Uranium Band | Window 14, persist 4, range 2.5-15%, 4 centre crossings, cooldown 25, max overlap 35%, break 2 closes, rails track the true high/low | Volume-gated breaks, rail recolour, projecting after a break |
+| Uranium Band | Window 14, persist 4, range 2.5-15%, 4 centre crossings, cooldown 25, max overlap 35%, break 2 closes, rails track the true high/low, green panel on | Volume-gated breaks, rail recolour, projecting after a break |
 | Air Pocket | Fair value gap (3-bar), min 0.30% **and** 0.10 ATR, fully-closed fill, 20 open pockets | Session-only gaps, keeping filled pockets, size labels |
 | BB Trend Avg | Bollinger 20/2, flips on a close beyond the band, table top-right | The bands themselves — this script contributes the table |
 | Bark or Bite | ATR 14, 8 pullbacks remembered, bite at 1.4× the average, floor 2.0 ATR, volume required, memory clears on a bite | Bark markers, bar tinting |
@@ -178,6 +178,17 @@ so a wick or a single close outside widens the zone rather than leaving a rail t
 contains price; the moment a bar closes outside, the rails lock and the break clock starts. A
 break needs *N* consecutive closes outside, optionally past a buffer, and on confirmation the
 zone stops. Old zones are kept up to the limit you set, then deleted.
+
+**If the zone vanishes when you mouse over it.** Hovering never re-runs a Pine script, so
+nothing in the logic can cause this — only the rendering can, and `behind_chart = true` is
+the one flag in this suite that moves drawings onto a different layer. A layer below the
+chart can be occluded by the hover/crosshair layer TradingView paints on top. Two ways to
+confirm in about ten seconds: flip `behind_chart = true` to `false` in the `indicator()`
+call, save, then remove and re-add the indicator; or just turn off *Draw the green panel* in
+Style, which leaves the rails and centre line as ordinary foreground drawings. If the rails
+stay put while the panel was disappearing, it is the panel's layer. Report which one it was
+rather than living with it — the diagnosis above is reasoning about TradingView's renderer,
+not something verified from here.
 
 ### Volume Planes
 Bins the lookback window by price, spreads each bar's volume across the bins its range

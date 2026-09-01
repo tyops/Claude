@@ -108,5 +108,8 @@ if (gapUp or gapDn) and sizeOk and sessOk and bar_index > span
             label.delete(old.l)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
-alertcondition(gapUp and sizeOk, "Air pocket opened up",   "Air Pocket: gap up left unfilled air below on {{ticker}}")
-alertcondition(gapDn and sizeOk, "Air pocket opened down", "Air Pocket: gap down left unfilled air above on {{ticker}}")
+//  the same test the box creation uses, so an alert never fires for a pocket
+//  that was filtered out and never drawn
+drewOne = (gapUp or gapDn) and sizeOk and sessOk and bar_index > span
+alertcondition(drewOne and gapUp, "Air pocket opened up",   "Air Pocket: gap up left unfilled air below on {{ticker}}")
+alertcondition(drewOne and gapDn, "Air pocket opened down", "Air Pocket: gap down left unfilled air above on {{ticker}}")

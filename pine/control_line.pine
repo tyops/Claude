@@ -32,7 +32,11 @@ smaV     = ta.sma(src, len)
 emaV     = ta.ema(src, len)
 wmaV     = ta.wma(src, len)
 hmaV     = ta.hma(src, len)
-rollVwap = volSum > 0 ? math.sum(src * vol, len) / volSum : emaV
+//  the rolling sum has to run on every bar, not only the bars with volume —
+//  inside the ternary its window would stop advancing on a zero-volume bar and
+//  come back stale
+pvSum    = math.sum(src * vol, len)
+rollVwap = volSum > 0 ? pvSum / volSum : emaV
 
 anchorTf = timeframe.isintraday ? "D" : timeframe.isdaily ? "M" : "12M"
 newSess  = timeframe.change(anchorTf)

@@ -14,12 +14,27 @@
 //
 //  The panel is drawn BEHIND the chart (behind_chart = true) so it reads as a
 //  solid background block with the candles sitting on top of it, not as a wash
-//  over price. If your build ever rejects that argument, delete it — nothing
-//  else depends on it.
+//  over price.
+//
+//  ── IF THE ZONE VANISHES WHEN YOU MOUSE OVER IT ────────────────────────────
+//  behind_chart is the thing to suspect. It is the only flag in this suite that
+//  moves drawings onto a different render layer, and a layer below the chart can
+//  be occluded by the hover/crosshair layer TradingView paints on top. Hovering
+//  never re-runs a Pine script, so nothing in the logic below can cause it —
+//  only the rendering can.
+//
+//  Two ways to confirm it in about ten seconds:
+//    1. Change `behind_chart = true` to `false` on the line below, save, then
+//       remove and re-add the indicator. Still vanishing? It is not this.
+//    2. Or turn OFF "Draw the green panel" in Style. That leaves the rails and
+//       the centre line, which are ordinary foreground drawings — if those stay
+//       put while the panel was disappearing, it is the panel's layer.
+//  Tell me which one it was and I will fix it properly rather than guessing.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Uranium Band", overlay = true,
-     max_lines_count = 500, max_boxes_count = 200, max_bars_back = 1000, behind_chart = true)
+     max_lines_count = 500, max_boxes_count = 200, max_bars_back = 1000,
+     behind_chart = true)
 
 // ── Balance detection ────────────────────────────────────────────────────────
 gBal     = "Balance detection"
@@ -65,6 +80,8 @@ extAfter = input.bool(false, "Keep projecting the rails after a break", group = 
 gSty     = "Style"
 edgeCol  = input.color(#FFFFFF, "Rails",  group = gSty, inline = "c1")
 edgeWid  = input.int(2, "Width", minval = 1, maxval = 4, group = gSty, inline = "c1")
+showPanel= input.bool(true, "Draw the green panel", group = gSty,
+     tooltip = "Off leaves the white rails and the centre line on their own. Use it as the fallback if the panel misbehaves on your build — the rails are ordinary foreground drawings and do not depend on the behind-chart layer. See the note at the top of the script.")
 fillCol  = input.color(#0E3020, "Panel",  group = gSty, inline = "c2")
 fillT    = input.int(0, "Transparency", minval = 0, maxval = 100, group = gSty, inline = "c2",
      tooltip = "0 is solid, which is how it should look — the panel sits behind the candles, so it fills in as a background block rather than shading price.")
@@ -120,8 +137,14 @@ f_park(_l) =>
     if not na(_l)
         array.push(oldRails, _l)
 
+//  Each finished zone parks three rails when the centre line is on and two when
+//  it is off. Trimming on a fixed multiple of three would let the panels hit
+//  their limit first and leave the rails of already-deleted zones stranded on
+//  the chart, so the rail budget has to track what is actually parked.
+railsPer = showMid ? 3 : 2
+
 f_trim() =>
-    while array.size(oldRails) > keepOld * 3
+    while array.size(oldRails) > keepOld * railsPer
         line.delete(array.shift(oldRails))
     while array.size(oldPanels) > keepOld
         box.delete(array.shift(oldPanels))
@@ -149,7 +172,8 @@ if active
         if extAfter
             line.set_extend(railTop, extend.right)
             line.set_extend(railBot, extend.right)
-        array.push(oldPanels, panel)
+        if not na(panel)
+            array.push(oldPanels, panel)
         f_park(railTop)
         f_park(railBot)
         f_park(railMid)
@@ -173,13 +197,15 @@ if active
             line.set_y2(railTop, bandHi)
             line.set_y1(railBot, bandLo)
             line.set_y2(railBot, bandLo)
-            box.set_top(panel, bandHi)
-            box.set_bottom(panel, bandLo)
+            if not na(panel)
+                box.set_top(panel, bandHi)
+                box.set_bottom(panel, bandLo)
             if not na(railMid)
                 mid = math.avg(bandHi, bandLo)
                 line.set_y1(railMid, mid)
                 line.set_y2(railMid, mid)
-        box.set_right(panel, bar_index + 1)
+        if not na(panel)
+            box.set_right(panel, bar_index + 1)
         line.set_x2(railTop, bar_index + 1)
         line.set_x2(railBot, bar_index + 1)
         if not na(railMid)
@@ -211,9 +237,9 @@ if not active and isBalance and roomForIt and not confirmUp and not confirmDn an
             bandLo := l2
             back   := i
     left     = bar_index - back
-    panel   := box.new(left, bandHi, bar_index + 1, bandLo, xloc = xloc.bar_index,
+    panel   := showPanel ? box.new(left, bandHi, bar_index + 1, bandLo, xloc = xloc.bar_index,
          border_width = 0, border_color = color.new(#000000, 100),
-         bgcolor = color.new(fillCol, fillT))
+         bgcolor = color.new(fillCol, fillT)) : na
     railTop := line.new(left, bandHi, bar_index + 1, bandHi, xloc = xloc.bar_index,
          color = edgeCol, width = edgeWid, style = line.style_solid)
     railBot := line.new(left, bandLo, bar_index + 1, bandLo, xloc = xloc.bar_index,

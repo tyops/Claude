@@ -224,8 +224,12 @@ rsiBearOk = not useRsi or rsi < rsiMid
 // ── VWAP side ────────────────────────────────────────────────────────────────
 vol_      = nz(volume)
 volSum    = math.sum(vol_, vwapLen)
-vwapFall  = ta.ema(hlc3, vwapLen)      // computed every bar, not inside the ternary
-vwap      = volSum > 0 ? math.sum(hlc3 * vol_, vwapLen) / volSum : vwapFall
+//  both the fallback average and the rolling sum are computed every bar. Left
+//  inside the ternary the sum would skip zero-volume bars, and its window would
+//  come back stale once volume returned.
+vwapFall  = ta.ema(hlc3, vwapLen)
+pvSum     = math.sum(hlc3 * vol_, vwapLen)
+vwap      = volSum > 0 ? pvSum / volSum : vwapFall
 vwapBull  = not useVwap or close > vwap
 vwapBear  = not useVwap or close < vwap
 

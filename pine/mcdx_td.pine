@@ -83,8 +83,9 @@ bankPct  = bankRaw / capVal * 100
 hotPct   = hotRaw  / capVal * 100
 retPct   = retRaw  / capVal * 100
 
-//  drawn tallest-first so the shorter tiers stay visible in front: retail behind,
-//  then hot money, then banker at the front
+//  Draw order is fixed, not sorted by height: retail first, then hot money, then
+//  banker. Later plots render in front, so banker — the tier that matters — is
+//  always the one you can see.
 plot(retPct,  "Retail %",    color = color.new(retCol,  bodyT), style = plot.style_columns, histbase = 0)
 plot(hotPct,  "Hot money %", color = color.new(hotCol,  bodyT), style = plot.style_columns, histbase = 0)
 plot(bankPct, "Banker %",    color = color.new(bankCol, bodyT), style = plot.style_columns, histbase = 0)
