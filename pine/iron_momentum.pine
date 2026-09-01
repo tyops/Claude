@@ -1,68 +1,75 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ── PANE ───────────────────────────────────────────────────────────────────
-//  This is a SUB-PANE indicator (overlay = false) — it belongs in its own box
-//  under the chart. If it lands on the price pane, TradingView is reusing the
-//  pane of whatever script was previously added from that Pine Editor tab;
-//  changing a script's overlay flag never relocates an instance already on the
-//  chart. Fix: remove it, open a NEW editor tab, paste, then Add to chart.
+//  Sub-pane indicator. If it lands on the price pane, remove it, open a NEW
+//  Pine Editor tab, paste, then Add to chart.
 // ═══════════════════════════════════════════════════════════════════════════════
 //  IRON MOMENTUM
-//  A momentum throttle. It measures how far price has travelled from its Hull
-//  baseline, drawn as a band that expands when momentum runs and contracts to
-//  a waist when things go quiet. Gold shading means buyers have control of
-//  momentum, iron-grey means sellers do.
+//  A momentum throttle. It expands when momentum runs and tightens to a waist
+//  when conditions go quiet. Gold shading means buyers have control of momentum,
+//  iron-grey means sellers do.
 //    ★ cyan    = momentum flips into bullish control
 //    ★ magenta = momentum flips into bearish control
-//  Best flips: band tight, then expanding. Worst: band already wide and fading.
+//  Best flips: squeezed, then releasing. Worst: already wide and fading.
 //
-//  Why Hull deviation rather than MACD — on the reference charts this
-//  oscillator swings through roughly 20-25% of the price range (ACHR 3-15 with
-//  a ±2.5 pane, IGV 50-130 with -20 to +10). A MACD(12,26,9) runs 1-3% of
-//  price. Two orders of magnitude apart, so it cannot be a MACD. Distance from
-//  a 55-period Hull sits in the right range, and its fills flip on the same
-//  bars as Carbon Structure's ribbon, which is what you would expect if both
-//  read the same Hull.
+//  Default engine is the squeeze-momentum construction — a linear regression of
+//  price against its own range midpoint, with Bollinger Bands measured inside
+//  Keltner Channels to detect the squeeze. Three things point at it: the
+//  predecessor charts run SQZMOM_LB (20, 2, 20, 1.5) in this pane, an
+//  independent teardown of the suite guessed the same BB-inside-KC construction,
+//  and "expands during impulse, contracts during chop" is a description of a
+//  squeeze indicator rather than a MACD.
+//
+//  When the squeeze is ON the market is coiled — that is the compression this
+//  reads, measured directly rather than inferred from band width.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Iron Momentum", overlay = false)
 
-// ── Momentum ─────────────────────────────────────────────────────────────────
-gMom     = "Momentum"
-mode     = input.string("MACD (higher timeframe)", "Engine",
-     options = ["MACD (higher timeframe)", "MACD (chart)", "Hull deviation"], group = gMom,
-     tooltip = "The predecessor charts run CM_Ult_MacD_MTF in this pane — a MACD pulled from a higher timeframe. That also explains the amplitude: a chart-timeframe MACD spans 1-3% of price where this oscillator spans 20-25%, but a MACD two or three resolutions up gets there. Hull deviation is the alternative reading.")
-
-gHtf     = "Higher timeframe"
-htfAuto  = input.bool(true, "One step up from the chart", group = gHtf,
-     tooltip = "Intraday steps up to daily, daily to weekly, weekly to monthly, monthly to yearly. Turn it off to name a resolution, and go further up if you want a slower, wider oscillator.")
-htfCust  = input.timeframe("W", "Custom resolution", group = gHtf)
-src      = input.source(close, "Source",                  group = gMom)
-hullLen  = input.int(55, "Hull length", minval = 1,       group = gMom,
-     tooltip = "Matches Carbon Structure's length, which is the one its author names.")
-hullType = input.string("HMA", "Hull type", options = ["HMA", "EHMA", "THMA"], group = gMom)
-smooth   = input.int(2,  "Line smoothing", minval = 1,    group = gMom)
-baseLen  = input.int(9,  "Baseline length", minval = 1,   group = gMom,
+// ── Engine ───────────────────────────────────────────────────────────────────
+gMom     = "Engine"
+mode     = input.string("Squeeze momentum", "Engine",
+     options = ["Squeeze momentum", "MACD (chart)", "MACD (higher timeframe)", "Hull deviation"],
+     group = gMom,
+     tooltip = "Squeeze momentum is the best-supported construction. The MACD options follow CM_Ult_MacD_MTF, which also sits in this pane on the older charts — chart resolution is its own default. Hull deviation is the alternative reading.")
+src      = input.source(close, "Source", group = gMom)
+smooth   = input.int(1,  "Line smoothing", minval = 1, group = gMom,
+     tooltip = "1 leaves the engine raw. Raise it only to calm a jagged pane.")
+baseLen  = input.int(9,  "Baseline length", minval = 1, group = gMom,
      tooltip = "The slower line the throttle is measured against. Their gap is the band.")
 bandMlt  = input.float(1.0, "Band width ×", minval = 0.1, step = 0.1, group = gMom)
 
-gMacd    = "MACD mode"
-fastLen  = input.int(12, "MACD fast",  minval = 1,        group = gMacd, inline = "m")
-slowLen  = input.int(26, "slow",       minval = 1,        group = gMacd, inline = "m")
-sigLen   = input.int(9,  "signal",     minval = 1,        group = gMacd, inline = "m")
+// ── Squeeze momentum ─────────────────────────────────────────────────────────
+gSqz     = "Squeeze momentum"
+bbLen    = input.int(20, "Bollinger length", minval = 2, group = gSqz, inline = "bb")
+bbMult   = input.float(2.0, "deviations", minval = 0.1, step = 0.1, group = gSqz, inline = "bb")
+kcLen    = input.int(20, "Keltner length", minval = 2, group = gSqz, inline = "kc")
+kcMult   = input.float(1.5, "multiple", minval = 0.1, step = 0.1, group = gSqz, inline = "kc",
+     tooltip = "20 / 2 / 20 / 1.5 are the values the predecessor charts run.")
+useTR    = input.bool(true, "Use true range for the Keltner width", group = gSqz)
+showSqz  = input.bool(true, "Mark the squeeze on the zero line", group = gSqz,
+     tooltip = "A dot for every bar the Bollinger Bands sit inside the Keltner Channels — the market coiled and waiting.")
 
+// ── MACD modes ───────────────────────────────────────────────────────────────
+gMacd    = "MACD modes"
+fastLen  = input.int(12, "MACD fast",  minval = 1, group = gMacd, inline = "m")
+slowLen  = input.int(26, "slow",       minval = 1, group = gMacd, inline = "m")
+sigLen   = input.int(9,  "signal",     minval = 1, group = gMacd, inline = "m")
+htfAuto  = input.bool(true, "Higher timeframe: one step up", group = gMacd,
+     tooltip = "Only used by the higher-timeframe MACD mode. Intraday steps to daily, daily to weekly, weekly to monthly.")
+htfCust  = input.timeframe("W", "Custom resolution", group = gMacd)
+
+// ── Hull mode ────────────────────────────────────────────────────────────────
+gHull    = "Hull mode"
+hullLen  = input.int(55, "Hull length", minval = 1, group = gHull)
+hullType = input.string("HMA", "Hull type", options = ["HMA", "EHMA", "THMA"], group = gHull)
+
+// ── Floor ────────────────────────────────────────────────────────────────────
 gFloor   = "Floor"
-atrLen   = input.int(14, "ATR length", minval = 1,        group = gFloor)
-bandMin  = input.float(0.05, "Min half-width (% of ATR)", minval = 0, step = 0.05, group = gFloor,
-     tooltip = "Floor so the band stays visible through dead patches. Scaled off ATR so it travels across symbols.")
-pinchPct = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gFloor)
+atrLen   = input.int(14, "ATR length", minval = 1, group = gFloor)
+bandMin  = input.float(0.05, "Min half-width (% of ATR)", minval = 0, step = 0.05, group = gFloor)
+pinchPct = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gFloor,
+     tooltip = "Used by the non-squeeze engines, which have no squeeze state of their own to read.")
 sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gFloor)
-
-// ── State ────────────────────────────────────────────────────────────────────
-gState   = "State"
-colBy    = input.string("Hull slope", "Colour the band by",
-     options = ["Hull slope", "Throttle sign"], group = gState,
-     tooltip = "Hull slope flips on the same bars as Carbon Structure's ribbon, which is what the reference charts show. Throttle sign flips when price crosses its own Hull baseline.")
-lagBars  = input.int(2, "Slope compared against N bars back", minval = 1, maxval = 10, group = gState)
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
@@ -90,19 +97,36 @@ f_hull(_src, _len, _type) =>
     _type == "EHMA" ? ehma : _type == "THMA" ? thma : hma
 
 // ═════════════════════════════════════════════════════════════════════════════
+//  SQUEEZE MOMENTUM — Bollinger Bands measured inside Keltner Channels
+// ═════════════════════════════════════════════════════════════════════════════
 atr      = ta.atr(atrLen)
-hull     = f_hull(src, hullLen, hullType)
-hullUp   = hull > hull[lagBars]
+bbBasis  = ta.sma(src, bbLen)
+bbDev    = bbMult * ta.stdev(src, bbLen)
+upBB     = bbBasis + bbDev
+loBB     = bbBasis - bbDev
 
-//  every engine runs each bar; the mode picks between finished values
-hullOsc  = ta.ema(src - hull, smooth)
-hullBase = ta.ema(hullOsc, baseLen)
+kcBasis  = ta.sma(src, kcLen)
+kcRange  = useTR ? ta.tr : high - low
+kcWidth  = ta.sma(kcRange, kcLen)
+upKC     = kcBasis + kcWidth * kcMult
+loKC     = kcBasis - kcWidth * kcMult
 
+sqzOn    = loBB > loKC and upBB < upKC     // coiled
+sqzOff   = loBB < loKC and upBB > upKC     // released
+
+//  price against the midpoint of its own range, straightened by a regression
+midRange = math.avg(math.avg(ta.highest(high, kcLen), ta.lowest(low, kcLen)), ta.sma(close, kcLen))
+sqzVal   = ta.linreg(src - midRange, kcLen, 0)
+sqzOsc   = ta.ema(sqzVal, smooth)
+sqzBase  = ta.ema(sqzOsc, baseLen)
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  OTHER ENGINES — all run every bar, the mode picks between finished values
+// ═════════════════════════════════════════════════════════════════════════════
 [macdLine, macdSig, macdHist] = ta.macd(src, fastLen, slowLen, sigLen)
 macdOsc  = ta.ema(macdLine, smooth)
 macdBase = ta.ema(macdSig,  smooth)
 
-//  the same MACD pulled from a higher resolution — wider swings, slower turns
 htfStep  = timeframe.isintraday ? "D" : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "12M"
 htfRes   = htfAuto ? htfStep : htfCust
 [mtfLine, mtfSig, mtfHist] = request.security(syminfo.tickerid, htfRes,
@@ -110,11 +134,17 @@ htfRes   = htfAuto ? htfStep : htfCust
 mtfOsc   = ta.ema(mtfLine, smooth)
 mtfBase  = ta.ema(mtfSig,  smooth)
 
-useHull  = mode == "Hull deviation"
-useMtf   = mode == "MACD (higher timeframe)"
-throttle = useHull ? hullOsc  : useMtf ? mtfOsc  : macdOsc
-baseline = useHull ? hullBase : useMtf ? mtfBase : macdBase
+hull     = f_hull(src, hullLen, hullType)
+hullOsc  = ta.ema(src - hull, smooth)
+hullBase = ta.ema(hullOsc, baseLen)
 
+useSqz   = mode == "Squeeze momentum"
+useMtf   = mode == "MACD (higher timeframe)"
+useHull  = mode == "Hull deviation"
+throttle = useSqz ? sqzOsc  : useHull ? hullOsc  : useMtf ? mtfOsc  : macdOsc
+baseline = useSqz ? sqzBase : useHull ? hullBase : useMtf ? mtfBase : macdBase
+
+// ═════════════════════════════════════════════════════════════════════════════
 spread   = math.abs(throttle - baseline)
 half     = math.max(spread * bandMlt, atr * bandMin)
 upper    = baseline + half
@@ -123,9 +153,10 @@ lower    = baseline - half
 hiW      = ta.highest(half, sqzLook)
 loW      = ta.lowest(half,  sqzLook)
 widthRnk = hiW - loW > 0 ? (half - loW) / (hiW - loW) * 100 : 50.0
-pinched  = widthRnk < pinchPct
+//  the squeeze engine knows it is compressed; the others have to infer it
+pinched  = useSqz ? sqzOn : widthRnk < pinchPct
 
-bullMom  = colBy == "Hull slope" and useHull ? hullUp : throttle > baseline
+bullMom  = throttle > baseline
 bandCol  = bullMom ? goldCol : ironCol
 
 pUp = plot(upper, "Band upper", color = color.new(bandCol, math.min(99, bandT + 30)), linewidth = 1)
@@ -133,6 +164,8 @@ pDn = plot(lower, "Band lower", color = color.new(bandCol, math.min(99, bandT + 
 fill(pUp, pDn, color = color.new(bandCol, pinched ? math.min(99, bandT + 15) : bandT), title = "Iron band")
 plot(showBase ? baseline : na, "Baseline", color = color.new(#C4C9D0, 25), linewidth = 1)
 plot(0, "Zero", color = color.new(color.gray, 55))
+plotchar(showSqz and useSqz and sqzOn ? 0 : na, "Squeeze on", "•", location.absolute,
+     color.new(#C4C9D0, 20), size = size.tiny, display = display.pane)
 
 // ── Stars: the bar control flips ─────────────────────────────────────────────
 bullStar = bullMom and not bullMom[1]
@@ -152,7 +185,7 @@ plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★",
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(bullStar, "Iron — bullish control", "Iron Momentum: buyers took control on {{ticker}}")
 alertcondition(bearStar, "Iron — bearish control", "Iron Momentum: sellers took control on {{ticker}}")
-alertcondition(ta.crossover(throttle, 0),  "Throttle above zero", "Iron Momentum: price crossed above its Hull baseline on {{ticker}}")
-alertcondition(ta.crossunder(throttle, 0), "Throttle below zero", "Iron Momentum: price crossed below its Hull baseline on {{ticker}}")
-alertcondition(pinched and not pinched[1], "Iron — compression", "Iron Momentum: band compressing on {{ticker}}")
-alertcondition(not pinched and pinched[1], "Iron — expansion",   "Iron Momentum: band expanding on {{ticker}}")
+alertcondition(sqzOn and not sqzOn[1],   "Squeeze on",  "Iron Momentum: squeeze fired on {{ticker}} — coiled")
+alertcondition(sqzOff and not sqzOff[1], "Squeeze off", "Iron Momentum: squeeze released on {{ticker}}")
+alertcondition(ta.crossover(throttle, 0),  "Throttle above zero", "Iron Momentum: throttle crossed above zero on {{ticker}}")
+alertcondition(ta.crossunder(throttle, 0), "Throttle below zero", "Iron Momentum: throttle crossed below zero on {{ticker}}")

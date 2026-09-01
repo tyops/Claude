@@ -181,7 +181,7 @@ if flipped
     else if reg[1] == -1
         bearSum := bearSum + curLen
         bearN   := bearN + 1
-    curLen := 1
+    curLen := 0
 else
     curLen := reg == 0 ? 0 : curLen + 1
 

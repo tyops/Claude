@@ -87,7 +87,9 @@ if flipped
     else if trend[1] == -1
         bearSum := bearSum + curLen
         bearN   := bearN + 1
-    curLen := 1
+    //  the flip bar itself counts as zero — a fresh trend on the reference
+    //  charts reads "Real length: 0", not 1
+    curLen := 0
 else
     curLen := trend == 0 ? 0 : curLen + 1
 

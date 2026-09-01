@@ -12,7 +12,8 @@ gLine    = "Control Line"
 src      = input.source(hlc3, "Source",                     group = gLine)
 mode     = input.string("SMA", "Mode",
      options = ["SMA", "EMA", "WMA", "HMA", "Rolling VWAP", "Session VWAP"], group = gLine)
-len      = input.int(50, "Length", minval = 1,              group = gLine)
+len      = input.int(50, "Length", minval = 1,              group = gLine,
+     tooltip = "The predecessor charts run a six-average stack — EMA 8, 21, 34 and SMA 50, 100, 200 — and the Control Line is almost certainly one of the three SMAs. If it does not trace your reference chart at 50, try 100 and 200 before changing the mode.")
 smooth   = input.int(3, "Extra smoothing", minval = 1,      group = gLine,
      tooltip = "Light pass over the finished line so it reads as one clean curve instead of a wobbly average.")
 lineCol  = input.color(#C0707E, "Colour",  group = gLine, inline = "s")

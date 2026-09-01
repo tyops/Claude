@@ -75,20 +75,18 @@ bankRaw  = f_tier(src, bankLen, bankBase, bankSens, capVal, smoothLen)
 hotRaw   = f_tier(src, hotLen,  hotBase,  hotSens,  capVal, smoothLen)
 retRaw   = f_tier(src, retLen,  retBase,  retSens,  capVal, smoothLen)
 
-total    = bankRaw + hotRaw + retRaw
-bankPct  = total > 0 ? bankRaw / total * 100 : 0.0
-hotPct   = total > 0 ? hotRaw  / total * 100 : 0.0
-retPct   = total > 0 ? retRaw  / total * 100 : 100.0
+//  Each tier is read against its own ceiling, not against the other two. The
+//  readouts on the reference charts prove this: 62 / 18 / 0 sums to 80 and
+//  74 / 46 / 19 sums to 139, so they cannot be shares of one total.
+bankPct  = bankRaw / capVal * 100
+hotPct   = hotRaw  / capVal * 100
+retPct   = retRaw  / capVal * 100
 
-//  stacked by drawing the tallest column first and laying the shorter ones over
-//  it: retail at the bottom, hot money above it, banker filling out the top
-lvlAll   = 100.0
-lvlRetHot= retPct + hotPct
-lvlRet   = retPct
-
-plot(lvlAll,    "Banker share",    color = color.new(bankCol, bodyT), style = plot.style_columns, histbase = 0)
-plot(lvlRetHot, "Hot money share", color = color.new(hotCol,  bodyT), style = plot.style_columns, histbase = 0)
-plot(lvlRet,    "Retail share",    color = color.new(retCol,  bodyT), style = plot.style_columns, histbase = 0)
+//  drawn tallest-first so the shorter tiers stay visible in front: retail behind,
+//  then hot money, then banker at the front
+plot(retPct,  "Retail %",    color = color.new(retCol,  bodyT), style = plot.style_columns, histbase = 0)
+plot(hotPct,  "Hot money %", color = color.new(hotCol,  bodyT), style = plot.style_columns, histbase = 0)
+plot(bankPct, "Banker %",    color = color.new(bankCol, bodyT), style = plot.style_columns, histbase = 0)
 hline(heavyLvl, "Heavy accumulation", color = color.new(color.gray, 60), linestyle = hline.style_dotted)
 
 // ── Percentage boxes ─────────────────────────────────────────────────────────
