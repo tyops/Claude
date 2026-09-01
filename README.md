@@ -14,9 +14,9 @@ in the indicator book and the reference charts.
 | `pine/bb_trend_avg.pine` | overlay | — | Trend-duration dashboard: Trend, Real length, Probable, Bull/Bear averages |
 | `pine/mcdx_td.pine` | sub-pane | — | Participation lens — banker, hot money and retail tiers as a histogram |
 | `pine/volume_planes.pine` | overlay | — | Horizontal volume profile — high volume nodes, value area, POC |
-| `pine/neon_stack.pine` | sub-pane | ✅ | Momentum alignment meter — three speed layers as a stack, banded |
-| `pine/iron_momentum.pine` | sub-pane | ✅ | Fast momentum vs its baseline, gold = buyers control, gray = sellers |
-| `pine/silver_flow.pine` | sub-pane | ✅ | Whale flow (gold) vs reactive money (white), 0-100 with a control zone |
+| `pine/neon_stack.pine` | sub-pane | ✅ | Momentum alignment meter — three RSI lengths as a stack, banded |
+| `pine/iron_momentum.pine` | sub-pane | ✅ | Squeeze momentum vs its baseline, gold = buyers control, gray = sellers |
+| `pine/silver_flow.pine` | sub-pane | ✅ | Banker band (gold) vs hot money (white), 0-100 with a control zone |
 | `pine/sauls_watch.pine` | overlay | — | Multi-timeframe BULL / BEAR / NEUTRAL strip from the Gold Regime engine |
 | `pine/regime_volume.pine` | sub-pane | — | The `Vol` pane in the suite palette |
 
@@ -31,20 +31,46 @@ Reference layout, top to bottom: price (Gold Regime + Carbon Structure + Control
 Uranium Band + Volume Planes + Saul's Watch + your MA Stack), Vol, Iron Momentum,
 Neon Stack, Silver Flow.
 
+## Defaults
+
+Every script ships configured the way it should be run. Nothing needs setting up before you
+add it, and the optional filters are off on purpose — each one only ever *removes* signals,
+so leaving them on by default would give you a different chart than the reference.
+
+| Script | The settings that matter | Off by default |
+|---|---|---|
+| Gold Regime | MACD 12/26/9, trend 50, confirmation 10, ATR 14, sensitivity 5, swing filter on (lookback 20, age 5), cooldown 8, push 0.25 ATR, sequential confirmation on (window 4) | RSI side, volume, VWAP side, internals, HTF sync, regime agreement, streak table |
+| Carbon Structure | Hull band, HMA, length **55**, lag 2 bars, cloud transparency 30 | Two-baseline mode, centre line, compression fade |
+| Control Line | SMA 50, extra smoothing 3, dusty rose `#C0707E`, width 3 | Side tinting |
+| Uranium Band | Window 14, persist 4, range 2.5-15%, 4 centre crossings, cooldown 25, max overlap 35%, break 2 closes, rails track the true high/low | Volume-gated breaks, rail recolour, projecting after a break |
+| Air Pocket | Fair value gap (3-bar), min 0.30% **and** 0.10 ATR, fully-closed fill, 20 open pockets | Session-only gaps, keeping filled pockets, size labels |
+| BB Trend Avg | Bollinger 20/2, flips on a close beyond the band, table top-right | The bands themselves — this script contributes the table |
+| Bark or Bite | ATR 14, 8 pullbacks remembered, bite at 1.4× the average, floor 2.0 ATR, volume required, memory clears on a bite | Bark markers, bar tinting |
+| Volume Planes | Lookback 300, 60 bins, longest plane 140 bars, anchored to the window start, POC extended | Value-area highlight |
+| Saul's Watch | 1H / 4H / 1D / 1W / 1M, Gold Regime engine, duration row on | — |
+| Neon Stack | RSI 7 / 14 / 28, smoothing **3**, compression threshold 2.0 | Slow line, 30/50/70 levels |
+| Iron Momentum | Squeeze momentum, BB 20/2 inside KC 20/1.5, smoothing **3**, baseline 9, squeeze dots on | MACD and Hull engines |
+| Silver Flow | MCDX bands, banker RSI 21 base 50 at 1.5, hot money RSI 40 base 30 at 0.7, ceiling 20, readout on | Volume-flow mode, 50 level |
+| MCDX TD | Banker RSI 50 base 50 at 1.5, hot money RSI 40 base 30 at 0.7, retail RSI 30 base 20 at 0.4, ceiling 20, heavy accumulation at 50% | — |
+| Vol | Coloured by bar direction, average 20, spike at 2.0× | Gold Regime colouring |
+
+Stars default to **Tiny** on all four scripts that draw them.
+
 ## Matching the reference charts
 
 | What you see | Where it comes from |
 |---|---|
-| Gold/slate cloud hugging price | Carbon Structure fills the space between two double-smoothed baselines — one fill, gold when fast leads, slate when it doesn't |
-| Cloud pinches to a waist and flips colour | The baselines converging and crossing; a small ATR floor keeps the waist visible |
+| Gold/slate cloud hugging price | Carbon Structure fills the space between a Hull average and its own value two bars back — one fill, gold when the Hull is rising, slate when it is falling |
+| Cloud pinches to a waist and flips colour | The Hull turning over: the gap to its own lag goes to nothing at every inflection, which is where the tone flips |
 | Faint lines running through the cloud | Your own MA Stack showing through the transparent fill — Carbon Structure draws no inner lines |
 | Dusty-rose line running through price | Control Line, SMA 50 by default with light extra smoothing |
-| Cyan stars well below the bars, magenta well above | Gold Regime, *Star offset (ATR)* — 2.0 by default |
+| Cyan stars well below the bars, magenta well above | Gold Regime, *Star offset (ATR)* — 1.5 by default |
 | Dark green panel with a white rail top and bottom | Uranium Band. The panel is drawn behind the chart so candles sit on top of it; no side borders. It extends while price stays in balance and stops at the confirmed break |
 | White horizontal bars along the left edge | Volume Planes, anchored to the window start, brighter as the node gets bigger |
 | `1H 4H 1D 1W 1M` strip with one gold cell | Saul's Watch, a 5-column horizontal strip, gold for BULL |
 | Green ribbon with a pale halo and a white line through it | Neon Stack: bright core band, faded halo, mid line on top |
-| Gold/slate blob breathing around zero | Iron Momentum: baseline ± the gap to the fast line, coloured by who has control |
+| Gold/slate blob breathing around zero | Iron Momentum: baseline ± the gap to the squeeze throttle, coloured by who has control of momentum |
+| Dots on the zero line under a quiet blob | Iron Momentum marking every bar the Bollinger Bands sit inside the Keltner Channels — the market coiled |
 | Gold zone under the gold line, near-black when white leads | Silver Flow's control zone, which also fades a step when control is slipping |
 | Stars sitting just under each oscillator ribbon | The band pinches at every flip, so a fixed gap under the lower edge lands them in a neat row |
 
@@ -63,11 +89,19 @@ least 1 confirming on the weekly or higher**.
 
 Neon usually fires first, Iron and Gold confirm, Silver tends to confirm last.
 
-**Star size** is an input on every script that draws them — Tiny (default), Small, Normal.
-Pine requires a constant for character size, so each size is its own hidden plot and the
-input picks between them; you will see the unused sizes listed in the Style tab, which is
-normal. Gold Regime also has a *Star offset (ATR)* input to push the stars off the bar, and
-a triangle-marker mode.
+**Star size** is an input on every script that draws them — Auto, Tiny (default), Small,
+Normal. Tiny is the smallest fixed size Pine offers; Auto is the only thing smaller, and it
+scales the star to the bar width so it shrinks as you zoom out. Pine requires a constant for
+character size, so each size is its own hidden plot and the input picks between them; you
+will see the unused sizes listed in the Style tab, which is normal. Gold Regime also has a
+*Star offset (ATR)* input to push the stars off the bar, and a triangle-marker mode.
+
+> **If the stars still look oversized after you paste a new version in, the code is not the
+> problem — your chart is.** TradingView keeps an indicator instance's *saved* inputs when
+> the script behind it is edited, so a new default never reaches an instance you already
+> added. Open the indicator's Settings, go to **Defaults → Reset settings**, and it will
+> pick up every default in this release. The same applies to any other default that looks
+> unchanged after an update.
 
 ## What each script does
 
@@ -123,11 +157,16 @@ of further inference from screenshots.
 A Hull average compared against its own value two bars back, with the space between filled
 — gold when rising, slate when falling. Length 55 and the Hull construction are the parts
 its author has stated outright, which makes this the best-supported trigger in the suite.
-The band widens as the Hull accelerates and pinches to a waist at every inflection. The
-earlier fast/slow cloud is still available under *Band construction*. It widens as the baselines separate (trend strength) and pinches as
-they converge (momentum fading), flipping gold ↔ slate when they cross. Width percentile
-under the compression threshold fades the cloud. Double smoothing is on by default for the
-rounded shape in the reference charts.
+The band widens as the Hull accelerates and pinches to a waist at every inflection.
+
+The earlier fast/slow cloud is still available under *Band construction* — it widens as the
+baselines separate (trend strength) and pinches as they converge (momentum fading), flipping
+gold ↔ slate when they cross, with double smoothing on for a rounded shape. Under either
+construction, *Fade the cloud while compressed* dims the fill when band width drops under
+the compression percentile; it is off by default.
+
+Carbon Structure draws **no inner lines**. Faint striations inside the cloud on a reference
+chart are the MA Stack showing through the transparent fill, not part of this script.
 
 ### Uranium Band
 Balance is declared when the window's range sits between the min and max range percentages,
@@ -147,26 +186,39 @@ grows out from the POC until it covers the set percentage; POC optionally extend
 chart. Anchor the planes to the window start or to the right edge.
 
 ### Neon Stack
-Three EMAs of RSI. Bullish alignment = fast > mid > slow. The midline is wrapped in a band
-of `|fast − slow| × width` with a floor, coloured by the stack state. Wide = impulse,
-tight = compression.
+Three RSI **lengths** — 7, 14 and 28 — not three smoothings of one RSI. Its author says to
+use a triple RSI if you don't want his, so three lengths it is. Bullish alignment is
+fast > mid > slow, and the midline is wrapped in a band of `|fast − slow| × width` with a
+floor, coloured by the stack state. Wide = impulse, tight = compression. Line smoothing
+defaults to 3: a raw RSI(7) prints jagged, and the reference panes are smooth.
 
 ### Iron Momentum
-Smoothed MACD line vs its smoothed signal. Band = baseline ± `|fast − baseline| × width`,
-gold when the fast line has control, iron-gray when it doesn't. The compression percentile
-marks the tight-then-expanding flips the book calls the best ones.
+Squeeze momentum by default — a linear regression of price against its own range midpoint,
+with Bollinger Bands measured inside Keltner Channels (20 / 2 / 20 / 1.5) detecting the
+squeeze directly rather than inferring it from band width. The predecessor charts run
+SQZMOM_LB in this pane, which is what settled it. Band = baseline ± `|throttle − baseline| ×
+width`, gold when buyers have control of momentum, iron-gray when sellers do; a dot on the
+zero line marks every coiled bar. MACD (chart), MACD (higher timeframe) and Hull deviation
+remain selectable under *Engine*. Line smoothing defaults to 3 for the same reason as Neon.
 
 ### Silver Flow
-Whale line: only bars whose volume clears the baseline average × multiple contribute, their
-signed body-ratio flow is smoothed and normalised to 0-100. Reactive line: MFI, lightly
-smoothed. The zone between them tones down when control is slipping (gold falling while gold
-leads, or gold rising while white leads). Stars are the crossings.
+MCDX bands by default. Each band is an RSI on its own period, offset by a base level, scaled
+by a sensitivity, clamped into a 0-20 ceiling, then read as a percentage of that ceiling —
+which is why a raw 17.8 displays as 89%, and reproducing those published readouts is what
+identified the construction. Gold is the banker band (RSI 21), white is hot money (RSI 40).
+The zone between them tones down when control is slipping (gold falling while gold leads, or
+gold rising while white leads). Stars are the crossings. The earlier size-filtered volume
+model is still available under *Construction*.
 
-Market internals — Put/Call ratio, VIX, McClellan breadth — are wired in but **off by
-default**, so the default read stays symbol-specific. Turn on *Blend PCR / VIX / breadth*
-to fold them into the gold line with the weights provided; feeds your plan does not carry
-(`USI:PCC`, `CBOE:VIX`, `USI:ADVN.NY`, `USI:DECL.NY`) return `na`, drop out of the blend and
-re-normalise the remaining weights instead of breaking anything.
+Crossings are regime hints, **not entries** — its author is explicit about that, and it is
+the most misused thing in the suite. Nor can this see institutional order flow; nothing
+available to a chart script can. It is a price-derived proxy, and "banker" is a label on an
+oscillator rather than a fact about anyone's book.
+
+Market internals — Put/Call ratio, VIX, McClellan breadth — live in **Gold Regime**, behind
+its *Require internals confirmation* switch, and are off by default so the read stays
+symbol-specific. Feeds your plan does not carry (`USI:PCC`, `CBOE:VIX`, `USI:ADVN.NY`,
+`USI:DECL.NY`) return `na` and drop out of the vote instead of breaking anything.
 
 ### Air Pocket
 A gap is a price range that never traded, and it stays a magnet until it does. Each gap
@@ -198,11 +250,16 @@ box shows the live pullback against the current threshold and how much memory ha
 
 ### MCDX TD
 Three tiers of participation, each an RSI on its own period, offset by a base level, scaled
-by a sensitivity and clamped into a 0-20 band so they read on one scale. Banker (red) is the
-slow institutional tier, hot money (yellow) the fast speculative one, retail (green) the
-crowd. Rising red above the heavy-accumulation line is the reading that matters; retail
-leading with no red under it is thin support. Defaults follow the published Multi-Color
-Dragon values — banker RSI 50 base 50 at 1.5, hot money RSI 40 base 30 at 0.7.
+by a sensitivity, clamped to the tier ceiling and read as a percentage of *that* ceiling.
+Banker (red) is the slow institutional tier, hot money (yellow) the fast speculative one,
+retail (green) the crowd. Rising red above the heavy-accumulation line is the reading that
+matters; retail leading with no red under it is thin support. Defaults follow the published
+Multi-Color Dragon values — banker RSI 50 base 50 at 1.5, hot money RSI 40 base 30 at 0.7.
+
+The three are **independent readings, not shares of one pie**. The reference charts print
+62 / 18 / 0 and 74 / 46 / 19, which sum to 80 and 139 — that is what ruled out the
+stacked-to-100 reading an earlier version of this script used. Bars are drawn tallest-first
+so the shorter tiers stay visible in front.
 
 ### Saul's Watch
 Runs the Gold Regime engine on five configurable timeframes via `request.security` and
@@ -211,8 +268,8 @@ timeframe — the chop warning.
 
 ## If an oscillator lands on the price pane
 
-Neon Stack, Iron Momentum, Silver Flow and Vol are all `overlay = false` and belong in
-their own box under the chart. TradingView decides an indicator's pane when you *add* it
+Neon Stack, Iron Momentum, Silver Flow, MCDX TD and Vol are all `overlay = false` and
+belong in their own box under the chart. TradingView decides an indicator's pane when you *add* it
 and never moves an instance afterwards — so if you paste one of these into a Pine Editor
 tab that already has a price-pane script on the chart, the new code inherits that pane and
 the ribbon smears across price.

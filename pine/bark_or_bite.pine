@@ -120,10 +120,11 @@ if biteNow
 biasCol = bias == 1 ? bullCol : bearCol
 barcolor(tintBars ? color.new(biasCol, 55) : na, title = "Bias tint")
 
+//  tiny everywhere, to match the marker size the rest of the suite uses
 plotshape(showBite and biteUp, "Bite ▲", shape.triangleup,   location.belowbar, bullCol,
-     size = size.small, display = display.pane)
+     size = size.tiny, display = display.pane)
 plotshape(showBite and biteDn, "Bite ▼", shape.triangledown, location.abovebar, bearCol,
-     size = size.small, display = display.pane)
+     size = size.tiny, display = display.pane)
 plotshape(showBark and barkNow and bias == 1,  "Bark (uptrend)",   shape.circle, location.belowbar,
      color.new(barkCol, 35), size = size.tiny, display = display.pane)
 plotshape(showBark and barkNow and bias == -1, "Bark (downtrend)", shape.circle, location.abovebar,

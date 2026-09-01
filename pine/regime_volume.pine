@@ -1,4 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
+//  ── PANE ───────────────────────────────────────────────────────────────────
+//  Sub-pane indicator. If it lands on the price pane, remove it, open a NEW
+//  Pine Editor tab, paste, then Add to chart.
+// ═══════════════════════════════════════════════════════════════════════════════
 //  Trade Daddy — VOL
 //  The volume pane in the suite palette: gold on up bars, gray on down bars, with
 //  an optional switch to colour by the Gold Regime state instead, and a shaded

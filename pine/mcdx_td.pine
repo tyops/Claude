@@ -5,17 +5,18 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  MCDX TD
 //  A participation lens. It splits the tape into three tiers of money and shows
-//  the share each one holds, stacked to 100%:
+//  how strong each one is right now:
 //    Banker / smart money (red)   — large, slow, patient
 //    Hot money (yellow)           — fast speculative capital
 //    Retail (green)               — small lots, the crowd
-//  Rising red is the reading that matters. A tall green share with no red under
+//  Rising red is the reading that matters. A tall green bar with no red under
 //  it is the crowd carrying the move, which is thin support.
 //
 //  Each tier is an RSI on its own period, offset by a base level and scaled by a
-//  sensitivity — the published Multi-Color Dragon construction. The three raw
-//  values are then taken as shares of their total, which is why the readouts sum
-//  to 100 and why a chart can print 0% / 29% / 71%.
+//  sensitivity — the published Multi-Color Dragon construction. Each is then
+//  clamped to the tier ceiling and read as a percentage of THAT ceiling, on its
+//  own. The three are independent readings, not shares of one pie: the reference
+//  charts print 62 / 18 / 0 and 74 / 46 / 19, which sum to 80 and 139.
 //
 //  What this is not: order-flow data. No chart script can see who is buying.
 //  These are smoothed price-derived proxies, and "banker" is a label on an

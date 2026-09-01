@@ -1,4 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════════════════
+//  ── PANE ───────────────────────────────────────────────────────────────────
+//  Sub-pane indicator. If it lands on the price pane, remove it, open a NEW
+//  Pine Editor tab, paste, then Add to chart.
+// ═══════════════════════════════════════════════════════════════════════════════
 //  SILVER FLOW
 //  A "who's in control" oscillator. Two bands, plotted as a share of control
 //  from 0 to 100, with the space between them shaded.
@@ -70,7 +74,8 @@ showRead = input.bool(true, "Show the percentage readout", group = gSty,
 // ── Stars ────────────────────────────────────────────────────────────────────
 gStar    = "Stars"
 showStar = input.bool(true, "Show stars", group = gStar)
-starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starSz   = input.string("Tiny", "Star size", options = ["Auto", "Tiny", "Small", "Normal"], group = gStar,
+     tooltip = "Tiny is the smallest fixed size Pine offers and is the default. Auto is the only thing smaller — it scales the star to the bar width, so it shrinks when you zoom out. If stars still look oversized after updating this script, the chart is holding your old saved value: open Settings, then Defaults, then Reset settings.")
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
 
@@ -134,15 +139,18 @@ if showRead and barstate.islast
 bullStar = ta.crossover(whaleLine,  reactLine)
 bearStar = ta.crossunder(whaleLine, reactLine)
 starY    = math.avg(whaleLine, reactLine)
+szA      = starSz == "Auto"
 szT      = starSz == "Tiny"
 szS      = starSz == "Small"
 szN      = starSz == "Normal"
 
-plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny, display = display.pane)
-plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small, display = display.pane)
+plotchar(showStar and szA and bullStar ? starY : na, "Bull ★ (auto)",   "★", location.absolute, bullCol, size = size.auto,   display = display.pane)
+plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny,   display = display.pane)
+plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small,  display = display.pane)
 plotchar(showStar and szN and bullStar ? starY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal, display = display.pane)
-plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny, display = display.pane)
-plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small, display = display.pane)
+plotchar(showStar and szA and bearStar ? starY : na, "Bear ★ (auto)",   "★", location.absolute, bearCol, size = size.auto,   display = display.pane)
+plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny,   display = display.pane)
+plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small,  display = display.pane)
 plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal, display = display.pane)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────

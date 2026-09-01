@@ -98,7 +98,8 @@ goldCol  = input.color(#C9A227, "Gold regime", group = gSty, inline = "rc")
 grayCol  = input.color(#9AA0A6, "Gray regime", group = gSty, inline = "rc")
 noneCol  = input.color(#4A5058, "No regime yet", group = gSty)
 showStar = input.bool(true, "Show stars",                    group = gSty)
-starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gSty)
+starSz   = input.string("Tiny", "Star size", options = ["Auto", "Tiny", "Small", "Normal"], group = gSty,
+     tooltip = "Tiny is the smallest fixed size Pine offers and is the default. Auto is the only thing smaller — it scales the star to the bar width, so it shrinks when you zoom out. If stars still look oversized after updating this script, the chart is holding your old saved value: open Settings, then Defaults, then Reset settings.")
 starOff  = input.float(1.5, "Star offset (ATR)", minval = 0, step = 0.1, group = gSty)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gSty, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gSty, inline = "sc")
@@ -287,16 +288,19 @@ if bearTrig
 
 bullY     = low  - atr * starOff
 bearY     = high + atr * starOff
+szA       = starSz == "Auto"
 szT       = starSz == "Tiny"
 szS       = starSz == "Small"
 szN       = starSz == "Normal"
 starOn    = showStar and not showTri
 
-plotchar(starOn and szT and bullTrig ? bullY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny, display = display.pane)
-plotchar(starOn and szS and bullTrig ? bullY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small, display = display.pane)
+plotchar(starOn and szA and bullTrig ? bullY : na, "Bull ★ (auto)",   "★", location.absolute, bullCol, size = size.auto,   display = display.pane)
+plotchar(starOn and szT and bullTrig ? bullY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny,   display = display.pane)
+plotchar(starOn and szS and bullTrig ? bullY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small,  display = display.pane)
 plotchar(starOn and szN and bullTrig ? bullY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal, display = display.pane)
-plotchar(starOn and szT and bearTrig ? bearY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny, display = display.pane)
-plotchar(starOn and szS and bearTrig ? bearY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small, display = display.pane)
+plotchar(starOn and szA and bearTrig ? bearY : na, "Bear ★ (auto)",   "★", location.absolute, bearCol, size = size.auto,   display = display.pane)
+plotchar(starOn and szT and bearTrig ? bearY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny,   display = display.pane)
+plotchar(starOn and szS and bearTrig ? bearY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small,  display = display.pane)
 plotchar(starOn and szN and bearTrig ? bearY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal, display = display.pane)
 
 plotshape(showStar and showTri and bullTrig, "Bull ▲", shape.triangleup,   location.belowbar, bullCol, size = size.tiny, display = display.pane)

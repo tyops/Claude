@@ -30,8 +30,8 @@ src      = input.source(close, "Source",                    group = gStk)
 fastLen  = input.int(7,  "Fast RSI", minval = 1,            group = gStk, inline = "l")
 midLen   = input.int(14, "Mid RSI",  minval = 1,            group = gStk, inline = "l")
 slowLen  = input.int(28, "Slow RSI", minval = 1,            group = gStk, inline = "l")
-smooth   = input.int(1, "Line smoothing", minval = 1,       group = gStk,
-     tooltip = "1 leaves the RSIs raw, which is what a triple RSI plots. Raise it only if the lines are too jagged to read.")
+smooth   = input.int(3, "Line smoothing", minval = 1,       group = gStk,
+     tooltip = "A raw RSI(7) prints jagged. 3 gives the smooth ribbon the reference panes show. Drop to 1 for the unsmoothed triple-RSI reading.")
 bandMin  = input.float(1.0, "Min band half-width", minval = 0, step = 0.5, group = gStk,
      tooltip = "Keeps the ribbon visible through compression instead of collapsing to a line.")
 pinchLvl = input.float(2.0, "Compression threshold", minval = 0.1, step = 0.1, group = gStk,
@@ -52,7 +52,8 @@ showLvls = input.bool(false, "Show 30 / 50 / 70 levels", group = gSty)
 // ── Stars ────────────────────────────────────────────────────────────────────
 gStar    = "Stars"
 showStar = input.bool(true, "Show stars",             group = gStar)
-starSz   = input.string("Tiny", "Star size", options = ["Tiny", "Small", "Normal"], group = gStar)
+starSz   = input.string("Tiny", "Star size", options = ["Auto", "Tiny", "Small", "Normal"], group = gStar,
+     tooltip = "Tiny is the smallest fixed size Pine offers and is the default. Auto is the only thing smaller — it scales the star to the bar width, so it shrinks when you zoom out. If stars still look oversized after updating this script, the chart is holding your old saved value: open Settings, then Defaults, then Reset settings.")
 starGap  = input.float(8.0, "Star gap below the band", minval = 0, step = 0.5, group = gStar)
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
@@ -102,15 +103,18 @@ plot(showLvls ? 30 : na, "30", color = color.new(color.gray, 85))
 bullStar = stackUp and not stackUp[1]
 bearStar = stackDn and not stackDn[1]
 starY    = math.max(1.0, lower - starGap)
+szA      = starSz == "Auto"
 szT      = starSz == "Tiny"
 szS      = starSz == "Small"
 szN      = starSz == "Normal"
 
-plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny, display = display.pane)
-plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small, display = display.pane)
+plotchar(showStar and szA and bullStar ? starY : na, "Bull ★ (auto)",   "★", location.absolute, bullCol, size = size.auto,   display = display.pane)
+plotchar(showStar and szT and bullStar ? starY : na, "Bull ★ (tiny)",   "★", location.absolute, bullCol, size = size.tiny,   display = display.pane)
+plotchar(showStar and szS and bullStar ? starY : na, "Bull ★ (small)",  "★", location.absolute, bullCol, size = size.small,  display = display.pane)
 plotchar(showStar and szN and bullStar ? starY : na, "Bull ★ (normal)", "★", location.absolute, bullCol, size = size.normal, display = display.pane)
-plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny, display = display.pane)
-plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small, display = display.pane)
+plotchar(showStar and szA and bearStar ? starY : na, "Bear ★ (auto)",   "★", location.absolute, bearCol, size = size.auto,   display = display.pane)
+plotchar(showStar and szT and bearStar ? starY : na, "Bear ★ (tiny)",   "★", location.absolute, bearCol, size = size.tiny,   display = display.pane)
+plotchar(showStar and szS and bearStar ? starY : na, "Bear ★ (small)",  "★", location.absolute, bearCol, size = size.small,  display = display.pane)
 plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★", location.absolute, bearCol, size = size.normal, display = display.pane)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
