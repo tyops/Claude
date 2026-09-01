@@ -92,9 +92,38 @@ extreme a trigger must sit. 5 leaves them exactly as configured; lower tightens 
 higher loosens them. The individual inputs remain the baseline it scales, so calibrate there
 and steer with the one dial.
 
+### Confidence
+
+Two kinds of claim sit behind these scripts, and they don't deserve the same trust.
+
+**Usage rules** — what to do with the output — are published, so they're near-certain.
+**Trigger rules** — what makes each script fire — are the protected part, and they leave
+almost no visual fingerprint. A three-bar confirmation window and a five-bar one produce
+charts you cannot tell apart. Treat anything below 40% as a starting point for testing.
+
+| Script | Contents | Trigger |
+|---|---|---|
+| Saul's Watch | 100% | inherits Gold Regime |
+| Neon Stack | 95% | 25% on lengths |
+| Silver Flow | 95% | 30% on params |
+| Gold Regime | 90% | 70% structure, 25% specifics |
+| Uranium Band | 90% | 40% |
+| Carbon Structure | 90% | 65% |
+| Volume Planes | 75% | 35% |
+| Control Line | 55% | 30% |
+| Iron Momentum | 50% | 40% |
+
+Cheap tests that would resolve the biggest unknowns: overlay SMA 200, SMA 100 and HMA 100
+on a chart carrying Control Line — one will trace it exactly. Load RSI at 7/14/28 beside
+Neon Stack and compare shape. Both are twenty-minute jobs and worth more than any amount
+of further inference from screenshots.
+
 ### Carbon Structure
-Two smoothed baselines; the cloud is drawn between them with an ATR floor so it never
-collapses to a line. It widens as the baselines separate (trend strength) and pinches as
+A Hull average compared against its own value two bars back, with the space between filled
+— gold when rising, slate when falling. Length 55 and the Hull construction are the parts
+its author has stated outright, which makes this the best-supported trigger in the suite.
+The band widens as the Hull accelerates and pinches to a waist at every inflection. The
+earlier fast/slow cloud is still available under *Band construction*. It widens as the baselines separate (trend strength) and pinches as
 they converge (momentum fading), flipping gold ↔ slate when they cross. Width percentile
 under the compression threshold fades the cloud. Double smoothing is on by default for the
 rounded shape in the reference charts.

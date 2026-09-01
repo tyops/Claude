@@ -1,36 +1,63 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Trade Daddy — IRON MOMENTUM
-//  A fast momentum line measured against its smoother baseline, drawn as a band
-//  that expands when momentum moves aggressively and contracts when things go
-//  quiet. Gold shading = buyers control momentum. Gray = sellers do.
+//  ── PANE ───────────────────────────────────────────────────────────────────
+//  This is a SUB-PANE indicator (overlay = false) — it belongs in its own box
+//  under the chart. If it lands on the price pane, TradingView is reusing the
+//  pane of whatever script was previously added from that Pine Editor tab;
+//  changing a script's overlay flag never relocates an instance already on the
+//  chart. Fix: remove it, open a NEW editor tab, paste, then Add to chart.
+// ═══════════════════════════════════════════════════════════════════════════════
+//  IRON MOMENTUM
+//  A momentum throttle. It measures how far price has travelled from its Hull
+//  baseline, drawn as a band that expands when momentum runs and contracts to
+//  a waist when things go quiet. Gold shading means buyers have control of
+//  momentum, iron-grey means sellers do.
 //    ★ cyan    = momentum flips into bullish control
 //    ★ magenta = momentum flips into bearish control
 //  Best flips: band tight, then expanding. Worst: band already wide and fading.
-//  ── PANE ───────────────────────────────────────────────────────────────────
-//  This is a SUB-PANE indicator (overlay = false) — it belongs in its own box
-//  under the chart, like Silver Flow. If it lands on the price pane, TradingView
-//  is reusing the pane of whatever script was previously added from that Pine
-//  Editor tab; changing a script's overlay flag never relocates an instance that
-//  is already on the chart. Fix: remove it from the chart, open a NEW editor tab,
-//  paste, then Add to chart. Or right-click the indicator title on the chart and
-//  pick "Move to → New pane below".
+//
+//  Why Hull deviation rather than MACD — on the reference charts this
+//  oscillator swings through roughly 20-25% of the price range (ACHR 3-15 with
+//  a ±2.5 pane, IGV 50-130 with -20 to +10). A MACD(12,26,9) runs 1-3% of
+//  price. Two orders of magnitude apart, so it cannot be a MACD. Distance from
+//  a 55-period Hull sits in the right range, and its fills flip on the same
+//  bars as Carbon Structure's ribbon, which is what you would expect if both
+//  read the same Hull.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Iron Momentum", overlay = false)
 
 // ── Momentum ─────────────────────────────────────────────────────────────────
 gMom     = "Momentum"
+mode     = input.string("Hull deviation", "Engine",
+     options = ["Hull deviation", "MACD"], group = gMom,
+     tooltip = "Hull deviation matches the amplitude on the reference charts. MACD is the earlier model, kept for comparison — note it plots on a far smaller scale.")
 src      = input.source(close, "Source",                  group = gMom)
-fastLen  = input.int(12, "MACD fast",  minval = 1,        group = gMom, inline = "m")
-slowLen  = input.int(26, "slow",       minval = 1,        group = gMom, inline = "m")
-sigLen   = input.int(9,  "signal",     minval = 1,        group = gMom, inline = "m")
+hullLen  = input.int(55, "Hull length", minval = 1,       group = gMom,
+     tooltip = "Matches Carbon Structure's length, which is the one its author names.")
+hullType = input.string("HMA", "Hull type", options = ["HMA", "EHMA", "THMA"], group = gMom)
 smooth   = input.int(2,  "Line smoothing", minval = 1,    group = gMom)
+baseLen  = input.int(9,  "Baseline length", minval = 1,   group = gMom,
+     tooltip = "The slower line the throttle is measured against. Their gap is the band.")
 bandMlt  = input.float(1.0, "Band width ×", minval = 0.1, step = 0.1, group = gMom)
-bandMin  = input.float(0.05, "Min half-width (% of ATR)", minval = 0, step = 0.05, group = gMom,
-     tooltip = "Floor for the band so it stays visible through dead patches. Scaled off ATR so it travels across symbols.")
-atrLen   = input.int(14, "ATR length", minval = 1,        group = gMom)
-pinchPct = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gMom)
-sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gMom)
+
+gMacd    = "MACD mode"
+fastLen  = input.int(12, "MACD fast",  minval = 1,        group = gMacd, inline = "m")
+slowLen  = input.int(26, "slow",       minval = 1,        group = gMacd, inline = "m")
+sigLen   = input.int(9,  "signal",     minval = 1,        group = gMacd, inline = "m")
+
+gFloor   = "Floor"
+atrLen   = input.int(14, "ATR length", minval = 1,        group = gFloor)
+bandMin  = input.float(0.05, "Min half-width (% of ATR)", minval = 0, step = 0.05, group = gFloor,
+     tooltip = "Floor so the band stays visible through dead patches. Scaled off ATR so it travels across symbols.")
+pinchPct = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gFloor)
+sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gFloor)
+
+// ── State ────────────────────────────────────────────────────────────────────
+gState   = "State"
+colBy    = input.string("Hull slope", "Colour the band by",
+     options = ["Hull slope", "Throttle sign"], group = gState,
+     tooltip = "Hull slope flips on the same bars as Carbon Structure's ribbon, which is what the reference charts show. Throttle sign flips when price crosses its own Hull baseline.")
+lagBars  = input.int(2, "Slope compared against N bars back", minval = 1, maxval = 10, group = gState)
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
@@ -47,29 +74,49 @@ starGap  = input.float(0.6, "Star gap below the band (× half-width)", minval = 
 bullCol  = input.color(#00E5FF, "Bull ★", group = gStar, inline = "sc")
 bearCol  = input.color(#FF00E0, "Bear ★", group = gStar, inline = "sc")
 
-// ═════════════════════════════════════════════════════════════════════════════
-[macdLine, macdSig, macdHist] = ta.macd(src, fastLen, slowLen, sigLen)
-atr      = ta.atr(atrLen)
-fastMom  = ta.ema(macdLine, smooth)
-baseMom  = ta.ema(macdSig,  smooth)
+// ── Helper ───────────────────────────────────────────────────────────────────
+f_hull(_src, _len, _type) =>
+    half  = math.max(1, int(_len / 2))
+    third = math.max(1, int(_len / 3))
+    root  = math.max(1, int(math.round(math.sqrt(_len))))
+    hma   = ta.wma(2 * ta.wma(_src, half) - ta.wma(_src, _len), root)
+    ehma  = ta.ema(2 * ta.ema(_src, half) - ta.ema(_src, _len), root)
+    thma  = ta.wma(ta.wma(_src, third) * 3 - ta.wma(_src, half) - ta.wma(_src, _len), _len)
+    _type == "EHMA" ? ehma : _type == "THMA" ? thma : hma
 
-bullMom  = fastMom > baseMom
-spread   = math.abs(fastMom - baseMom)
+// ═════════════════════════════════════════════════════════════════════════════
+atr      = ta.atr(atrLen)
+hull     = f_hull(src, hullLen, hullType)
+hullUp   = hull > hull[lagBars]
+
+//  both engines run every bar; the mode picks between finished values
+hullOsc  = ta.ema(src - hull, smooth)
+hullBase = ta.ema(hullOsc, baseLen)
+[macdLine, macdSig, macdHist] = ta.macd(src, fastLen, slowLen, sigLen)
+macdOsc  = ta.ema(macdLine, smooth)
+macdBase = ta.ema(macdSig,  smooth)
+
+useHull  = mode == "Hull deviation"
+throttle = useHull ? hullOsc  : macdOsc
+baseline = useHull ? hullBase : macdBase
+
+spread   = math.abs(throttle - baseline)
 half     = math.max(spread * bandMlt, atr * bandMin)
-upper    = baseMom + half
-lower    = baseMom - half
+upper    = baseline + half
+lower    = baseline - half
 
 hiW      = ta.highest(half, sqzLook)
 loW      = ta.lowest(half,  sqzLook)
 widthRnk = hiW - loW > 0 ? (half - loW) / (hiW - loW) * 100 : 50.0
 pinched  = widthRnk < pinchPct
 
+bullMom  = colBy == "Hull slope" and useHull ? hullUp : throttle > baseline
 bandCol  = bullMom ? goldCol : ironCol
 
 pUp = plot(upper, "Band upper", color = color.new(bandCol, math.min(99, bandT + 30)), linewidth = 1)
 pDn = plot(lower, "Band lower", color = color.new(bandCol, math.min(99, bandT + 30)), linewidth = 1)
 fill(pUp, pDn, color = color.new(bandCol, pinched ? math.min(99, bandT + 15) : bandT), title = "Iron band")
-plot(showBase ? baseMom : na, "Baseline", color = color.new(#C4C9D0, 25), linewidth = 1)
+plot(showBase ? baseline : na, "Baseline", color = color.new(#C4C9D0, 25), linewidth = 1)
 plot(0, "Zero", color = color.new(color.gray, 55))
 
 // ── Stars: the bar control flips ─────────────────────────────────────────────
@@ -90,5 +137,7 @@ plotchar(showStar and szN and bearStar ? starY : na, "Bear ★ (normal)", "★",
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(bullStar, "Iron — bullish control", "Iron Momentum: buyers took control on {{ticker}}")
 alertcondition(bearStar, "Iron — bearish control", "Iron Momentum: sellers took control on {{ticker}}")
+alertcondition(ta.crossover(throttle, 0),  "Throttle above zero", "Iron Momentum: price crossed above its Hull baseline on {{ticker}}")
+alertcondition(ta.crossunder(throttle, 0), "Throttle below zero", "Iron Momentum: price crossed below its Hull baseline on {{ticker}}")
 alertcondition(pinched and not pinched[1], "Iron — compression", "Iron Momentum: band compressing on {{ticker}}")
 alertcondition(not pinched and pinched[1], "Iron — expansion",   "Iron Momentum: band expanding on {{ticker}}")

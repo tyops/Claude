@@ -1,27 +1,42 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-//  Trade Daddy — CARBON STRUCTURE
-//  A dynamic band drawn around price for direction, pressure, and expansion vs
-//  compression. It widens as trend strength increases, pinches to a waist as
-//  momentum fades, and flips tone when structure turns hostile to continuation.
-//    Gold  = structure supports continuation higher
-//    Slate = structure supports continuation lower
+//  CARBON STRUCTURE
+//  A Hull band around price. The Hull average is compared against its own value
+//  two bars back: rising prints gold, falling prints slate, and the space
+//  between the two is filled. The band widens as the Hull accelerates and
+//  pinches to a waist at every inflection, which is where the tone flips.
+//    Gold band  = structure supports continuation higher
+//    Slate band = structure supports continuation lower
 //  Price riding the upper half of a rising gold band favours continuation, and
 //  pullbacks into it are the higher-probability continuation zones.
+//
+//  Length 55 and the Hull construction are the parts of this suite its author
+//  has stated directly, so they are the defaults. "Two baselines" keeps the
+//  earlier fast/slow cloud available if you want to compare.
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Carbon Structure", overlay = true)
 
 // ── Structure ────────────────────────────────────────────────────────────────
 gStr     = "Structure"
-src      = input.source(hlc3, "Source",                        group = gStr)
-fastLen  = input.int(13, "Fast length", minval = 1,            group = gStr, inline = "l")
-slowLen  = input.int(34, "Slow length", minval = 1,            group = gStr, inline = "l")
-maType   = input.string("EMA", "Baseline", options = ["EMA", "SMA", "WMA", "HMA", "ALMA"], group = gStr)
-dblSm    = input.bool(true, "Double smooth (rounder band)",    group = gStr)
-widthMlt = input.float(1.0, "Band width ×", minval = 0.1, step = 0.1, group = gStr)
-atrLen   = input.int(14, "ATR length",  minval = 1,            group = gStr, inline = "a")
-atrFloor = input.float(0.15, "min half-width (ATR)", minval = 0, step = 0.05, group = gStr, inline = "a",
-     tooltip = "A small floor so the waist at each flip stays visible instead of vanishing to a line. Keep it low — a large floor turns the band into a tube.")
+mode     = input.string("Hull band", "Band construction",
+     options = ["Hull band", "Two baselines"], group = gStr,
+     tooltip = "Hull band: one Hull average against its own value a couple of bars back, which is the stated construction. Two baselines: a fast and a slow average with the cloud between them.")
+src      = input.source(close, "Source", group = gStr)
+hullLen  = input.int(55, "Hull length", minval = 1, group = gStr,
+     tooltip = "55 is the length its author names.")
+hullType = input.string("HMA", "Hull type", options = ["HMA", "EHMA", "THMA"], group = gStr,
+     tooltip = "HMA is the standard Hull. EHMA is the smoother exponential variant, THMA the triple-weighted one — the same three the Hull Suite offers.")
+lagBars  = input.int(2, "Compared against N bars back", minval = 1, maxval = 10, group = gStr,
+     tooltip = "The band is the gap between the Hull now and the Hull this many bars ago. Two is the Hull Suite default.")
+
+gAlt     = "Two-baseline mode"
+fastLen  = input.int(13, "Fast length", minval = 1, group = gAlt, inline = "l")
+slowLen  = input.int(34, "Slow length", minval = 1, group = gAlt, inline = "l")
+maType   = input.string("EMA", "Baseline", options = ["EMA", "SMA", "WMA", "HMA", "ALMA"], group = gAlt)
+dblSm    = input.bool(true, "Double smooth", group = gAlt)
+widthMlt = input.float(1.0, "Band width ×", minval = 0.1, step = 0.1, group = gAlt)
+atrLen   = input.int(14, "ATR length",  minval = 1, group = gAlt, inline = "a")
+atrFloor = input.float(0.15, "min half-width (ATR)", minval = 0, step = 0.05, group = gAlt, inline = "a")
 
 // ── Style ────────────────────────────────────────────────────────────────────
 gSty     = "Style"
@@ -39,8 +54,17 @@ sqzLook  = input.int(100, "Compression lookback", minval = 10, group = gCmp)
 sqzPct   = input.int(25, "Compression percentile", minval = 1, maxval = 99, group = gCmp)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-//  all five run every bar and the type picks between the finished values, so no
-//  moving average is ever calculated inside a conditional branch
+//  all variants run every bar and the type picks between finished values, so no
+//  average is ever calculated inside a conditional branch
+f_hull(_src, _len, _type) =>
+    half  = math.max(1, int(_len / 2))
+    third = math.max(1, int(_len / 3))
+    root  = math.max(1, int(math.round(math.sqrt(_len))))
+    hma   = ta.wma(2 * ta.wma(_src, half) - ta.wma(_src, _len), root)
+    ehma  = ta.ema(2 * ta.ema(_src, half) - ta.ema(_src, _len), root)
+    thma  = ta.wma(ta.wma(_src, third) * 3 - ta.wma(_src, half) - ta.wma(_src, _len), _len)
+    _type == "EHMA" ? ehma : _type == "THMA" ? thma : hma
+
 f_ma(_src, _len, _type) =>
     s = ta.sma(_src, _len)
     e = ta.ema(_src, _len)
@@ -56,38 +80,46 @@ f_norm(_src, _len) =>
     na(rng) or rng <= 0 ? 50.0 : (_src - lo) / rng * 100.0
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  BAND — the cloud is simply the space between the two baselines
+//  BAND
 // ═════════════════════════════════════════════════════════════════════════════
+//  Hull band — the stated construction
+hull     = f_hull(src, hullLen, hullType)
+hullLag  = hull[lagBars]
+
+//  two-baseline cloud — the earlier construction, kept for comparison
 fast1    = f_ma(src, fastLen, maType)
 slow1    = f_ma(src, slowLen, maType)
-//  second pass runs every bar, not inside the ternary, so it stays consistent
 fast2    = f_ma(fast1, math.max(1, int(fastLen / 2)), maType)
 slow2    = f_ma(slow1, math.max(1, int(slowLen / 2)), maType)
 fast     = dblSm ? fast2 : fast1
 slow     = dblSm ? slow2 : slow1
-
 atr      = ta.atr(atrLen)
-basis    = math.avg(fast, slow)
-bullStr  = fast >= slow
-half     = math.max(math.abs(fast - slow) * 0.5 * widthMlt, atr * atrFloor)
-upper    = basis + half
-lower    = basis - half
+altBasis = math.avg(fast, slow)
+altHalf  = math.max(math.abs(fast - slow) * 0.5 * widthMlt, atr * atrFloor)
 
-bandW    = basis != 0 ? half * 2 / basis * 100 : 0.0
+isHull   = mode == "Hull band"
+edgeA    = isHull ? hull    : altBasis + altHalf
+edgeB    = isHull ? hullLag : altBasis - altHalf
+basis    = math.avg(edgeA, edgeB)
+bullStr  = isHull ? hull > hullLag : fast >= slow
+
+bandW    = basis != 0 ? math.abs(edgeA - edgeB) / basis * 100 : 0.0
 widthRnk = f_norm(bandW, sqzLook)
 squeezed = widthRnk < sqzPct
 dim      = dimSqz and squeezed ? 12 : 0
 baseCol  = bullStr ? goldCol : slateCol
 
-pUp = plot(upper, "Upper edge", color = color.new(baseCol, math.min(99, edgeT + dim)), linewidth = edgeWid)
-pDn = plot(lower, "Lower edge", color = color.new(baseCol, math.min(99, edgeT + dim)), linewidth = edgeWid)
-fill(pUp, pDn, color = color.new(baseCol, math.min(99, cloudT + dim)), title = "Carbon cloud")
+pA = plot(edgeA, "Band edge",   color = color.new(baseCol, math.min(99, edgeT + dim)), linewidth = edgeWid)
+pB = plot(edgeB, "Band lag",    color = color.new(baseCol, math.min(99, edgeT + dim)), linewidth = edgeWid)
+fill(pA, pB, color = color.new(baseCol, math.min(99, cloudT + dim)), title = "Carbon cloud")
 plot(showMid ? basis : na, "Centre", color = color.new(baseCol, 55), linewidth = 1)
 
 // ── State ────────────────────────────────────────────────────────────────────
-inBand    = close <= upper and close >= lower
-aboveBand = close > upper
-belowBand = close < lower
+bandTop   = math.max(edgeA, edgeB)
+bandBot   = math.min(edgeA, edgeB)
+inBand    = close <= bandTop and close >= bandBot
+aboveBand = close > bandTop
+belowBand = close < bandBot
 enterBand = inBand and not inBand[1]
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
