@@ -1,0 +1,123 @@
+// ═══════════════════════════════════════════════════════════════════════════════
+//  BB TREND AVG
+//  The trend-duration dashboard. A Bollinger breakout sets the trend — a close
+//  beyond the upper band turns it bullish, beyond the lower band bearish, and it
+//  holds until the other side is taken. The table then answers the only question
+//  that matters about a trend you are already in: how long has this one run, and
+//  how long do they usually run on this symbol?
+//
+//    Trend        — the live state
+//    Real length  — bars since it flipped
+//    Probable     — the average length of past runs on this side
+//    Bull / Bear avg — those averages, both sides, n/a until one completes
+//
+//  A warning about Probable, because the number invites the wrong conclusion:
+//  streak lengths in price series are close to memoryless. A trend reaching its
+//  average length is NOT more likely to end than one that hasn't. Read it as
+//  context for position sizing, never as a countdown to an exit.
+// ═══════════════════════════════════════════════════════════════════════════════
+//@version=6
+indicator("BB Trend Avg", overlay = true)
+
+// ── Bollinger trend ──────────────────────────────────────────────────────────
+gBB      = "Bollinger trend"
+src      = input.source(close, "Source", group = gBB)
+bbLen    = input.int(20, "Length", minval = 2, group = gBB, inline = "b")
+bbMult   = input.float(2.0, "Deviations", minval = 0.1, step = 0.1, group = gBB, inline = "b")
+trigMode = input.string("Close beyond the band", "Trend flips on",
+     options = ["Close beyond the band", "Basis slope", "%B above / below 0.5"], group = gBB,
+     tooltip = "Close beyond the band is the classic Bollinger breakout and produces the long persistent runs this table is built to measure. The other two flip more often.")
+
+// ── Table ────────────────────────────────────────────────────────────────────
+gTbl     = "Table"
+showTbl  = input.bool(true, "Show the table", group = gTbl)
+tblPos   = input.string(position.top_right, "Position",
+     options = [position.top_right, position.top_left, position.top_center,
+     position.bottom_right, position.bottom_left], group = gTbl)
+txtSize  = input.string(size.normal, "Text size",
+     options = [size.tiny, size.small, size.normal, size.large], group = gTbl)
+txtCol   = input.color(#FFFFFF, "Text",       group = gTbl, inline = "c")
+bgCol    = input.color(#0B0D11, "Background", group = gTbl, inline = "c")
+bgT      = input.int(15, "T", minval = 0, maxval = 100, group = gTbl, inline = "c")
+showProb = input.bool(true, "Show Probable", group = gTbl,
+     tooltip = "The historical average for the side you are on. See the note in the script header before you lean on it.")
+
+// ── Bands ────────────────────────────────────────────────────────────────────
+gBand    = "Bands"
+showBand = input.bool(false, "Plot the bands", group = gBand,
+     tooltip = "Off by default — on the reference charts this script contributes the table only.")
+bullCol  = input.color(#C9A227, "Bullish", group = gBand, inline = "c")
+bearCol  = input.color(#7C8794, "Bearish", group = gBand, inline = "c")
+bandT    = input.int(80, "Band transparency", minval = 0, maxval = 100, group = gBand)
+
+// ═════════════════════════════════════════════════════════════════════════════
+basis    = ta.sma(src, bbLen)
+dev      = bbMult * ta.stdev(src, bbLen)
+upper    = basis + dev
+lower    = basis - dev
+pctB     = upper - lower > 0 ? (src - lower) / (upper - lower) : 0.5
+
+//  every rule is evaluated each bar; the mode picks between finished states
+breakUp  = close > upper
+breakDn  = close < lower
+slopeUp  = basis > basis[1]
+pctUp    = pctB > 0.5
+
+var int trend = 0
+if trigMode == "Close beyond the band"
+    trend := breakUp ? 1 : breakDn ? -1 : trend
+else if trigMode == "Basis slope"
+    trend := slopeUp ? 1 : -1
+else
+    trend := pctUp ? 1 : -1
+
+// ── Streak bookkeeping ───────────────────────────────────────────────────────
+var int   curLen  = 0
+var float bullSum = 0.0
+var int   bullN   = 0
+var float bearSum = 0.0
+var int   bearN   = 0
+
+flipped = trend != nz(trend[1], trend)
+if flipped
+    //  bank the run that just ended
+    if trend[1] == 1
+        bullSum := bullSum + curLen
+        bullN   := bullN + 1
+    else if trend[1] == -1
+        bearSum := bearSum + curLen
+        bearN   := bearN + 1
+    curLen := 1
+else
+    curLen := trend == 0 ? 0 : curLen + 1
+
+bullAvg  = bullN > 0 ? bullSum / bullN : na
+bearAvg  = bearN > 0 ? bearSum / bearN : na
+probable = trend == 1 ? bullAvg : trend == -1 ? bearAvg : na
+
+f_num(_v) =>
+    na(_v) ? "n/a" : str.tostring(math.round(_v))
+
+// ── Bands ────────────────────────────────────────────────────────────────────
+trendCol = trend == 1 ? bullCol : trend == -1 ? bearCol : color.new(#4A5058, 0)
+pU = plot(showBand ? upper : na, "Upper", color = color.new(trendCol, 45))
+pL = plot(showBand ? lower : na, "Lower", color = color.new(trendCol, 45))
+fill(pU, pL, color = color.new(trendCol, bandT), title = "Bollinger band")
+plot(showBand ? basis : na, "Basis", color = color.new(trendCol, 25))
+
+// ── Table ────────────────────────────────────────────────────────────────────
+var table tbl = table.new(tblPos, 1, 4, frame_width = 0)
+if showTbl and barstate.islast
+    bg = color.new(bgCol, bgT)
+    table.cell(tbl, 0, 0, "Trend: " + (trend == 1 ? "Bullish" : trend == -1 ? "Bearish" : "None"),
+         text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
+    table.cell(tbl, 0, 1, "Real length: " + str.tostring(curLen),
+         text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
+    table.cell(tbl, 0, 2, showProb ? "Probable: " + f_num(probable) : "",
+         text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
+    table.cell(tbl, 0, 3, "Bull avg: " + f_num(bullAvg) + " | Bear avg: " + f_num(bearAvg),
+         text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
+
+// ── Alerts ───────────────────────────────────────────────────────────────────
+alertcondition(trend == 1 and trend[1] != 1,   "Trend → Bullish", "BB Trend Avg: trend flipped bullish on {{ticker}}")
+alertcondition(trend == -1 and trend[1] != -1, "Trend → Bearish", "BB Trend Avg: trend flipped bearish on {{ticker}}")

@@ -28,9 +28,14 @@ indicator("Iron Momentum", overlay = false)
 
 // ── Momentum ─────────────────────────────────────────────────────────────────
 gMom     = "Momentum"
-mode     = input.string("Hull deviation", "Engine",
-     options = ["Hull deviation", "MACD"], group = gMom,
-     tooltip = "Hull deviation matches the amplitude on the reference charts. MACD is the earlier model, kept for comparison — note it plots on a far smaller scale.")
+mode     = input.string("MACD (higher timeframe)", "Engine",
+     options = ["MACD (higher timeframe)", "MACD (chart)", "Hull deviation"], group = gMom,
+     tooltip = "The predecessor charts run CM_Ult_MacD_MTF in this pane — a MACD pulled from a higher timeframe. That also explains the amplitude: a chart-timeframe MACD spans 1-3% of price where this oscillator spans 20-25%, but a MACD two or three resolutions up gets there. Hull deviation is the alternative reading.")
+
+gHtf     = "Higher timeframe"
+htfAuto  = input.bool(true, "One step up from the chart", group = gHtf,
+     tooltip = "Intraday steps up to daily, daily to weekly, weekly to monthly, monthly to yearly. Turn it off to name a resolution, and go further up if you want a slower, wider oscillator.")
+htfCust  = input.timeframe("W", "Custom resolution", group = gHtf)
 src      = input.source(close, "Source",                  group = gMom)
 hullLen  = input.int(55, "Hull length", minval = 1,       group = gMom,
      tooltip = "Matches Carbon Structure's length, which is the one its author names.")
@@ -89,16 +94,26 @@ atr      = ta.atr(atrLen)
 hull     = f_hull(src, hullLen, hullType)
 hullUp   = hull > hull[lagBars]
 
-//  both engines run every bar; the mode picks between finished values
+//  every engine runs each bar; the mode picks between finished values
 hullOsc  = ta.ema(src - hull, smooth)
 hullBase = ta.ema(hullOsc, baseLen)
+
 [macdLine, macdSig, macdHist] = ta.macd(src, fastLen, slowLen, sigLen)
 macdOsc  = ta.ema(macdLine, smooth)
 macdBase = ta.ema(macdSig,  smooth)
 
+//  the same MACD pulled from a higher resolution — wider swings, slower turns
+htfStep  = timeframe.isintraday ? "D" : timeframe.isdaily ? "W" : timeframe.isweekly ? "M" : "12M"
+htfRes   = htfAuto ? htfStep : htfCust
+[mtfLine, mtfSig, mtfHist] = request.security(syminfo.tickerid, htfRes,
+     ta.macd(src, fastLen, slowLen, sigLen), lookahead = barmerge.lookahead_off)
+mtfOsc   = ta.ema(mtfLine, smooth)
+mtfBase  = ta.ema(mtfSig,  smooth)
+
 useHull  = mode == "Hull deviation"
-throttle = useHull ? hullOsc  : macdOsc
-baseline = useHull ? hullBase : macdBase
+useMtf   = mode == "MACD (higher timeframe)"
+throttle = useHull ? hullOsc  : useMtf ? mtfOsc  : macdOsc
+baseline = useHull ? hullBase : useMtf ? mtfBase : macdBase
 
 spread   = math.abs(throttle - baseline)
 half     = math.max(spread * bandMlt, atr * bandMin)

@@ -11,6 +11,7 @@ in the indicator book and the reference charts.
 | `pine/control_line.pine` | overlay | — | The dusty-rose baseline. Above it favours buyers, below favours sellers |
 | `pine/air_pocket.pine` | overlay | — | Unfilled gaps, boxed and held open until price comes back and fills them |
 | `pine/bark_or_bite.pine` | overlay | — | Trend filter with a memory of past pullbacks: noise (bark) vs structural break (bite) |
+| `pine/bb_trend_avg.pine` | overlay | — | Trend-duration dashboard: Trend, Real length, Probable, Bull/Bear averages |
 | `pine/mcdx_td.pine` | sub-pane | — | Participation lens — banker, hot money and retail tiers as a histogram |
 | `pine/volume_planes.pine` | overlay | — | Horizontal volume profile — high volume nodes, value area, POC |
 | `pine/neon_stack.pine` | sub-pane | ✅ | Momentum alignment meter — three speed layers as a stack, banded |
@@ -175,6 +176,16 @@ magenta for a gap down, leaving air above. The box extends right, bar after bar,
 price comes back through it — then it is spent and disappears. *First touch* ends a pocket
 as soon as price reaches its near edge; the default *Fully closed* holds it until the whole
 gap is traded through.
+
+### BB Trend Avg
+A Bollinger breakout sets the trend — a close beyond the upper band turns it bullish,
+beyond the lower band bearish — and it holds until the other side is taken. The table
+reports how long the current run has lasted against how long runs usually last on this
+symbol: **Real length**, **Probable** (the average for the side you're on), and both
+averages, showing `n/a` until one completes.
+
+Read Probable as context, not a countdown. Streak lengths are close to memoryless, so a
+trend reaching its average is no more likely to end than one that hasn't.
 
 ### Bark or Bite
 Every trend pulls back; the question is whether this pullback resembles the ones the trend

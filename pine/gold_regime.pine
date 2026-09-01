@@ -82,7 +82,8 @@ paintNone= input.bool(false, "Paint candles before the first confirmation", grou
 
 // ── Streak counter ───────────────────────────────────────────────────────────
 gStrk    = "Streak counter"
-showStrk = input.bool(true, "Show the streak table", group = gStrk)
+showStrk = input.bool(false, "Show the streak table", group = gStrk,
+     tooltip = "Off by default because BB Trend Avg owns this table on the reference charts — that is where Trend, Real length, Probable and the two averages come from. Turn it on if you would rather read the streak off the regime engine than off the Bollinger one.")
 strkPos  = input.string(position.bottom_right, "Position",
      options = [position.bottom_right, position.bottom_left, position.top_right,
      position.top_left, position.middle_right], group = gStrk)

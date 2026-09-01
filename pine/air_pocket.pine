@@ -13,6 +13,9 @@ indicator("Air Pocket", overlay = true,
 
 // ── Detection ────────────────────────────────────────────────────────────────
 gDet     = "Detection"
+detMode  = input.string("Fair value gap (3-bar)", "Pocket type",
+     options = ["Fair value gap (3-bar)", "Bar gap (2-bar)"], group = gDet,
+     tooltip = "Fair value gap: the middle bar runs far enough that its neighbours never overlap, leaving untraded air between them. This is the LuxAlgo FVG construction the predecessor charts use, and it finds far more pockets than a strict two-bar gap. Bar gap: the older, stricter test — one bar's low above the previous bar's high.")
 minPct   = input.float(0.30, "Min gap size %", minval = 0.0, step = 0.05, group = gDet,
      tooltip = "Gap height as a percentage of price. Filters the one-tick gaps that are not worth marking.")
 atrLen   = input.int(14, "ATR length", minval = 1, group = gDet, inline = "a")
@@ -53,9 +56,11 @@ var array<Pocket> pockets = array.new<Pocket>()
 atr      = ta.atr(atrLen)
 sessOk   = not newDay or not timeframe.isintraday or session.isfirstbar_regular
 
-gapUp    = low > high[1]
-gapDn    = high < low[1]
-gapSize  = gapUp ? low - high[1] : gapDn ? low[1] - high : 0.0
+//  a fair value gap compares against two bars back, a plain bar gap against one
+span     = detMode == "Fair value gap (3-bar)" ? 2 : 1
+gapUp    = low > high[span]
+gapDn    = high < low[span]
+gapSize  = gapUp ? low - high[span] : gapDn ? low[span] - high : 0.0
 sizeOk   = close > 0 and gapSize / close * 100 >= minPct and gapSize >= atr * minAtr
 
 // ── Age the open pockets: fill them, or carry them one bar further right ─────
@@ -85,11 +90,11 @@ if array.size(pockets) > 0
                 label.set_x(p.l, bar_index + 1)
 
 // ── New pocket ───────────────────────────────────────────────────────────────
-if (gapUp or gapDn) and sizeOk and sessOk and bar_index > 1
-    pTop = gapUp ? low : low[1]
-    pBot = gapUp ? high[1] : high
+if (gapUp or gapDn) and sizeOk and sessOk and bar_index > span
+    pTop = gapUp ? low : low[span]
+    pBot = gapUp ? high[span] : high
     pCol = gapUp ? upCol : dnCol
-    newBox = box.new(bar_index - 1, pTop, bar_index + 1, pBot, xloc = xloc.bar_index,
+    newBox = box.new(bar_index - span, pTop, bar_index + 1, pBot, xloc = xloc.bar_index,
          border_color = color.new(pCol, 20), border_width = edgeWid,
          bgcolor = color.new(pCol, bodyT))
     newLbl = showSize ? label.new(bar_index + 1, math.avg(pTop, pBot),
