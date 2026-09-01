@@ -115,8 +115,11 @@ if showTbl and barstate.islast
          text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
     table.cell(tbl, 0, 1, "Real length: " + str.tostring(curLen),
          text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
-    table.cell(tbl, 0, 2, showProb ? "Probable: " + f_num(probable) : "",
-         text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
+    //  skip the cell entirely rather than writing "" into it — an empty cell
+    //  with a background still renders as a blank coloured strip
+    if showProb
+        table.cell(tbl, 0, 2, "Probable: " + f_num(probable),
+             text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
     table.cell(tbl, 0, 3, "Bull avg: " + f_num(bullAvg) + " | Bear avg: " + f_num(bearAvg),
          text_color = txtCol, text_size = txtSize, bgcolor = bg, text_halign = text.align_right)
 

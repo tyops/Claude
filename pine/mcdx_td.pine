@@ -95,11 +95,13 @@ hline(heavyLvl, "Heavy accumulation", color = color.new(color.gray, 60), linesty
 var table read = table.new(readPos, 1, 3, frame_width = 0)
 if showRead and barstate.islast
     dark = color.new(#101216, 0)
-    table.cell(read, 0, 0, str.tostring(math.round(retPct))  + "%", text_color = dark,
+    //  nz guards the warm-up bars, where an RSI is still na and the readout
+    //  would otherwise print "NaN%"
+    table.cell(read, 0, 0, str.tostring(math.round(nz(retPct)))  + "%", text_color = dark,
          text_size = readSize, bgcolor = retCol)
-    table.cell(read, 0, 1, str.tostring(math.round(hotPct))  + "%", text_color = dark,
+    table.cell(read, 0, 1, str.tostring(math.round(nz(hotPct)))  + "%", text_color = dark,
          text_size = readSize, bgcolor = hotCol)
-    table.cell(read, 0, 2, str.tostring(math.round(bankPct)) + "%", text_color = dark,
+    table.cell(read, 0, 2, str.tostring(math.round(nz(bankPct))) + "%", text_color = dark,
          text_size = readSize, bgcolor = bankCol)
 
 // ── State ────────────────────────────────────────────────────────────────────

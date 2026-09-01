@@ -130,9 +130,12 @@ plot(showLvls ? 50 : na, "50", color = color.new(color.gray, 60))
 // ── Readout ──────────────────────────────────────────────────────────────────
 var table read = table.new(position.top_right, 1, 2, frame_width = 0)
 if showRead and barstate.islast
-    table.cell(read, 0, 0, str.tostring(whaleLine, "#") + "%", text_color = goldCol,
+    //  math.round rather than the "#" format: "#" drops a digit that rounds to
+    //  zero, so a band resting near 0 printed a bare "%" with no number. This
+    //  also matches how MCDX TD formats the same kind of readout.
+    table.cell(read, 0, 0, str.tostring(math.round(nz(whaleLine))) + "%", text_color = goldCol,
          text_size = size.small, bgcolor = color.new(#0B0D11, 20))
-    table.cell(read, 0, 1, str.tostring(reactLine, "#") + "%", text_color = whiteCol,
+    table.cell(read, 0, 1, str.tostring(math.round(nz(reactLine))) + "%", text_color = whiteCol,
          text_size = size.small, bgcolor = color.new(#0B0D11, 20))
 
 // ── Stars: the bar control changes hands ─────────────────────────────────────

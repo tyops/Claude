@@ -67,9 +67,11 @@ var float pullPeak = 0.0           // deepest pullback inside the live leg
 var array<float> mem = array.new<float>()
 
 //  first bar of real data seeds the direction; everything after is bite-driven
+bool justSeeded = false
 if bias == 0 and not na(seedMa)
     bias := close > seedMa ? 1 : -1
     ref  := close > seedMa ? high : low
+    justSeeded := true
 
 float curPull = 0.0
 bool  madeNew = false
@@ -103,7 +105,10 @@ memAvg   = array.size(mem) > 0 ? array.avg(mem) : na
 thresh   = na(memAvg) ? baseThr : math.max(baseThr, memAvg * memMult)
 noiseRat = thresh > 0 ? curPull / thresh : 0.0
 
-biteNow  = bias != 0 and curPull > thresh and volOk
+//  On the seeding bar ref is this bar's own extreme, so curPull is just the bar's
+//  range. A single wide bar would otherwise fire a bite and flip the bias in the
+//  same breath as setting it, before any pullback has actually happened.
+biteNow  = bias != 0 and not justSeeded and curPull > thresh and volOk
 barkNow  = bias != 0 and not biteNow and curPull > thresh * 0.6 and curPull > nz(curPull[1])
 
 biteUp   = biteNow and bias == -1        // a bite against a down bias turns it up

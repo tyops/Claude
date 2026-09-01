@@ -251,11 +251,25 @@ mcHigherLo= mcOsc > ta.lowest(mcOsc,  divLook)[1]
 mcBearDiv = priceHH and mcLowerHi                   // price up, breadth not following
 mcBullDiv = priceLL and mcHigherLo                  // price down, breadth improving
 mcBull    = mcOsc > 0 or mcBullDiv
-haveInt   = not na(pcr) or not na(vix) or netAdv != 0
-bullVotes = (pcrBull ? 1 : 0) + (vixBull ? 1 : 0) + (mcBull ? 1 : 0)
-bearVotes = (not pcrBull and not na(pcr) ? 1 : 0) + (not vixBull and not na(vix) ? 1 : 0) + (not mcBull or mcBearDiv ? 1 : 0)
-intBull   = not useInt or not haveInt or bullVotes >= intVotes
-intBear   = not useInt or not haveInt or bearVotes >= intVotes
+
+//  Every leg has to be gated on its feed actually existing, or a missing feed
+//  votes anyway. Breadth was the worst offender: with no advancing/declining
+//  data netAdv pins to 0, so mcOsc is 0, mcBull is false and mcBearDiv is false
+//  — which handed bear a permanent free vote while bull silently lost one, on
+//  every symbol whose plan does not carry the feed.
+haveP     = not na(pcr)
+haveV     = not na(vix)
+haveMc    = not na(advn) and not na(decl)
+haveInt   = haveP or haveV or haveMc
+bullVotes = (haveP and pcrBull ? 1 : 0) + (haveV and vixBull ? 1 : 0) + (haveMc and mcBull ? 1 : 0)
+bearVotes = (haveP and not pcrBull ? 1 : 0) + (haveV and not vixBull ? 1 : 0) + (haveMc and (not mcBull or mcBearDiv) ? 1 : 0)
+
+//  Asking for 2 of 3 when only one feed resolves is asking for something that
+//  can never happen, so the requirement scales down to what is actually there.
+feeds     = (haveP ? 1 : 0) + (haveV ? 1 : 0) + (haveMc ? 1 : 0)
+needVotes = math.min(intVotes, feeds)
+intBull   = not useInt or not haveInt or bullVotes >= needVotes
+intBear   = not useInt or not haveInt or bearVotes >= needVotes
 
 // ── Higher-timeframe trend ───────────────────────────────────────────────────
 //  one step up from the chart, unless a timeframe is named
