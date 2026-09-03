@@ -37,7 +37,11 @@ sizeMode = input.string("ATR multiples", "Balance size measured in",
      tooltip = "ATR multiples travel across timeframes and symbols, because the yardstick is the symbol's own bar range. Percent of price does not — a percentage tuned on daily charts rejects nearly every weekly consolidation. Use percent only if you want a hard price-based ceiling.")
 minAtrR  = input.float(1.0, "Min window range (ATR)", minval = 0.1, step = 0.1, group = gBal, inline = "ar",
      tooltip = "Movement floor and ceiling in ATR multiples. Over a 14-bar window price walks a path of roughly 14 ATR, so a span of only 2-4 ATR means heavy overlap — balance. Approaching 7+ means price kept going one way, which is a trend leg.")
-maxAtrR  = input.float(7.0, "max", minval = 0.5, step = 0.5, group = gBal, inline = "ar")
+maxAtrR  = input.float(3.5, "max", minval = 0.5, step = 0.5, group = gBal, inline = "ar")
+minCover = input.float(0.55, "Min half-window coverage", minval = 0.0, maxval = 1.0, step = 0.05, group = gBal,
+     tooltip = "Split the window in half and measure each half's own range against the whole. In a real range BOTH halves revisit most of it, so the smaller one is still a large fraction. In a trend leg at least one half is confined to a slice of the total, however many times price crossed the midpoint on the way up. This is what separates a range from a rally with pullbacks — without it a 6x advance can qualify as balance.")
+decayBars= input.int(3, "End the zone after N bars out of balance", minval = 0, group = gBal,
+     tooltip = "A zone should not outlive the balance that created it. Without this the only exit is a price break, and a very wide zone is close to unbreakable — so on a monthly chart one zone would extend for years and block every zone after it. 0 disables it and restores break-only exits.")
 minRange = input.float(2.5,  "Min window range %", minval = 0.1, step = 0.1, group = gBal, inline = "pr",
      tooltip = "Only used by 'Percent of price' mode. The ceiling is 45: a lower one is measured on daily charts and rejects weekly consolidations.")
 maxRange = input.float(45.0, "max", minval = 0.5, step = 0.5, group = gBal, inline = "pr")
@@ -111,7 +115,19 @@ rangeAtr  = atr > 0 ? winH / atr : 0.0
 sizeOk    = useAtrSz ? rangeAtr >= minAtrR and rangeAtr <= maxAtrR
      : rangePct >= minRange and rangePct <= maxRange
 
-inBalance = sizeOk and taps >= minTaps and atrOk
+//  Coverage. Split the window in half: the recent half is the last halfLen
+//  bars, the older half the halfLen bars before those. In a range both halves
+//  revisit most of the whole; in a trend leg at least one half is stuck in a
+//  slice of it. Every ta.* call here runs on every bar, none inside a branch.
+halfLen   = math.max(1, int(winLen / 2))
+recHi     = ta.highest(high, halfLen)
+recLo     = ta.lowest(low,   halfLen)
+oldHi     = ta.highest(high, winLen - halfLen)[halfLen]
+oldLo     = ta.lowest(low,   winLen - halfLen)[halfLen]
+coverage  = winH > 0 ? math.min(recHi - recLo, oldHi - oldLo) / winH : 0.0
+coverOk   = na(coverage) or coverage >= minCover
+
+inBalance = sizeOk and taps >= minTaps and atrOk and coverOk
 
 // balance has to hold for a few bars before it earns a zone
 var int balRun = 0
@@ -164,10 +180,19 @@ outDn    := brokeDn ? outDn + 1 : 0
 confirmUp = active and outUp >= brkBars and volOk
 confirmDn = active and outDn >= brkBars and volOk
 
+//  A zone must not outlive the balance that created it. Counting the bars a
+//  live zone spends failing the balance test gives it a second way out, and
+//  without one the only exit is a price break — which a very wide zone can
+//  shrug off for years, blocking every zone behind it.
+var int cold = 0
+cold     := active ? (inBalance ? 0 : cold + 1) : 0
+staleOut  = active and decayBars > 0 and cold >= decayBars
+endNow    = confirmUp or confirmDn or staleOut
+
 if active
-    if confirmUp or confirmDn
-        // the zone stops where the break was confirmed
-        if recolour
+    if endNow
+        // the zone stops here: a confirmed break, or balance simply gone
+        if recolour and (confirmUp or confirmDn)
             brkCol = confirmUp ? upCol : dnCol
             line.set_color(railTop, brkCol)
             line.set_color(railBot, brkCol)
@@ -226,7 +251,7 @@ ovHi      = na(prevHi) ? 0.0 : math.min(winHi, prevHi)
 overlap   = na(prevHi) or winH <= 0 ? 0.0 : math.max(0.0, ovHi - ovLo) / winH * 100.0
 roomForIt = overlap <= maxOver and (bar_index - lastEnd) >= cooldown
 
-if not active and isBalance and roomForIt and not confirmUp and not confirmDn and bar_index > winLen
+if not active and isBalance and roomForIt and not endNow and bar_index > winLen
     bandHi  := winHi
     bandLo  := winLo
     birthH  := winHi - winLo

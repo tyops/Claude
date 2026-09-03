@@ -42,7 +42,7 @@ so leaving them on by default would give you a different chart than the referenc
 | Gold Regime | MACD 12/26/9, trend 50, confirmation 10, ATR 14, sensitivity 5, swing filter on (lookback 20, age 5), cooldown 8, push 0.25 ATR, sequential confirmation on (window 4) | RSI side, volume, VWAP side, internals, HTF sync, regime agreement, streak table |
 | Carbon Structure | Hull band, HMA, length **55**, lag 2 bars, cloud transparency 30 | Two-baseline mode, centre line, compression fade |
 | Control Line | SMA 50, extra smoothing 3, dusty rose `#C0707E`, width 3 | Side tinting |
-| Uranium Band | Window 14, persist 3, size 1.0-7.0 ATR, 4 centre crossings, cooldown 8, max overlap 65%, growth cap 1.10×, walk back 30, break 2 closes, rails track the true high/low, green panel on | Volume-gated breaks, rail recolour, projecting after a break |
+| Uranium Band | Window 14, persist 3, size 1.0-3.5 ATR, coverage 0.55, 4 centre crossings, decay 3, cooldown 8, max overlap 65%, growth cap 1.10×, walk back 30, break 2 closes, rails track the true high/low, green panel on | Volume-gated breaks, rail recolour, projecting after a break |
 | Air Pocket | Fair value gap (3-bar), min 0.30% **and** 0.10 ATR, fully-closed fill, 20 open pockets | Session-only gaps, keeping filled pockets, size labels |
 | BB Trend Avg | Bollinger 20/2, flips on a close beyond the band, table top-right | The bands themselves — this script contributes the table |
 | Bark or Bite | ATR 14, 8 pullbacks remembered, bite at 1.4× the average, floor 2.0 ATR, volume required, memory clears on a bite | Bark markers, bar tinting |
@@ -200,6 +200,33 @@ Replayed against real bars:
 
 With those, the simulated live zone is **23.36 - 39.05** against reference rails reading
 ~24.0 - ~38.5, and three zones appear across the same 87 weeks instead of none.
+
+**Two more, found once the full history was replayed on all three timeframes.** The pass
+above was tuned on 87 weekly bars starting in 2025; the real chart runs back to the 2021
+listing, and on monthly the result was a single zone spanning $8 to $73 from Dec 2023
+onward — the whole chart as one "balance zone".
+
+4. *Nothing could tell a range from a rally with pullbacks.* A 14-month window covering a
+   6x advance still crossed its own midpoint often enough to pass the crossings gate. The
+   **coverage** test fixes this: split the window in half and measure each half's own range
+   against the whole. In a range both halves revisit most of it, so the smaller is still a
+   large fraction; in a trend leg at least one half is confined to a slice. The reference
+   weekly window scores 0.86, the monthly rally 0.24. The gate sits at 0.55.
+5. *A zone could outlive its balance.* The only exit was a confirmed price break, and a
+   very wide zone is close to unbreakable — so it extended for years and its cooldown
+   blocked everything behind it. A zone now also ends after N bars failing the balance test
+   (`decay`, 3 by default; 0 restores break-only exits).
+
+The ATR ceiling also came down from 7.0 to 3.5. The reference weekly zone sits at 2.79 ATR,
+so it has room to spare, while 7.0 was admitting month-long windows spanning a 6x move.
+
+Replayed on real HIMS bars, all three timeframes now behave:
+
+| | before | after |
+|---|---|---|
+| Monthly (75 bars) | 1 zone, $8-73, spanning three years | 1 zone, $2.72-8.29 — the real 2022 base |
+| Weekly (87 bars) | no live zone | live **23.36-39.05**, matching the reference |
+| Daily (148 bars) | ok | live 26.86-34.46 |
 
 **If the zone vanishes when you mouse over it.** Hovering never re-runs a Pine script, so
 nothing in the logic can cause this — only the rendering can, and `behind_chart = true` is
