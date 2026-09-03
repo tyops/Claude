@@ -13,23 +13,13 @@
 //  outside, the rails lock and the break clock starts.
 //
 //  The panel is drawn BEHIND the chart (behind_chart = true) so it reads as a
-//  solid background block with the candles sitting on top of it, not as a wash
-//  over price.
+//  solid background block with the candles sitting on top of it. If the zone
+//  disappears on mouse-over, that flag is the suspect — set it to false below,
+//  or turn off "Draw the green panel" in Style. See the README.
 //
-//  ── IF THE ZONE VANISHES WHEN YOU MOUSE OVER IT ────────────────────────────
-//  behind_chart is the thing to suspect. It is the only flag in this suite that
-//  moves drawings onto a different render layer, and a layer below the chart can
-//  be occluded by the hover/crosshair layer TradingView paints on top. Hovering
-//  never re-runs a Pine script, so nothing in the logic below can cause it —
-//  only the rendering can.
-//
-//  Two ways to confirm it in about ten seconds:
-//    1. Change `behind_chart = true` to `false` on the line below, save, then
-//       remove and re-add the indicator. Still vanishing? It is not this.
-//    2. Or turn OFF "Draw the green panel" in Style. That leaves the rails and
-//       the centre line, which are ordinary foreground drawings — if those stay
-//       put while the panel was disappearing, it is the panel's layer.
-//  Tell me which one it was and I will fix it properly rather than guessing.
+//  THE LAST LINE OF THIS FILE IS AN alertcondition(). If it is not, the paste
+//  was cut short — that is what produces "an indicator must contain at least
+//  one of the following" (CE10246).
 // ═══════════════════════════════════════════════════════════════════════════════
 //@version=6
 indicator("Uranium Band", overlay = true,
@@ -41,15 +31,15 @@ gBal     = "Balance detection"
 winLen   = input.int(14, "Balance window (bars)", minval = 3, group = gBal,
      tooltip = "The window that has to qualify as balance. Keep it well under the length of the consolidations you want caught — the zone itself is stretched back to the real start afterwards, so this does not set the zone's width.")
 persist  = input.int(3, "Bars balance must hold first", minval = 1, group = gBal,
-     tooltip = "The window has to stay in balance this many bars in a row before the zone is drawn. This is the main control for how many zones you get — raise it if the chart is busy, lower it if it misses one. It was 4, which is one bar too many: the centre-crossing count flickers across its own threshold inside a real range, so a genuine consolidation rarely strings four clean bars together.")
+     tooltip = "How many bars in a row the window must qualify before a zone is drawn. The main dial for how many zones you get: raise it if the chart is busy, lower it if it misses one.")
 sizeMode = input.string("ATR multiples", "Balance size measured in",
      options = ["ATR multiples", "Percent of price"], group = gBal,
-     tooltip = "ATR multiples travel across timeframes and symbols — the same setting works on a quiet daily chart and a violent weekly one, because the yardstick is the symbol's own bar range. Percent of price does not: a fixed percentage tuned on liquid daily charts rejects nearly every weekly consolidation, since a 14-week balance on a volatile name routinely spans 40 percent or more of price. Use percent only if you want a hard price-based ceiling.")
+     tooltip = "ATR multiples travel across timeframes and symbols, because the yardstick is the symbol's own bar range. Percent of price does not — a percentage tuned on daily charts rejects nearly every weekly consolidation. Use percent only if you want a hard price-based ceiling.")
 minAtrR  = input.float(1.0, "Min window range (ATR)", minval = 0.1, step = 0.1, group = gBal, inline = "ar",
-     tooltip = "Movement floor and ceiling in ATR multiples. Over a 14-bar window the total path price walks is roughly 14 ATR, so a window whose high-to-low span is only 2-4 ATR has overlapped itself heavily — that is balance. A span approaching 7+ ATR means price kept going one way, which is a trend leg.")
+     tooltip = "Movement floor and ceiling in ATR multiples. Over a 14-bar window price walks a path of roughly 14 ATR, so a span of only 2-4 ATR means heavy overlap — balance. Approaching 7+ means price kept going one way, which is a trend leg.")
 maxAtrR  = input.float(7.0, "max", minval = 0.5, step = 0.5, group = gBal, inline = "ar")
 minRange = input.float(2.5,  "Min window range %", minval = 0.1, step = 0.1, group = gBal, inline = "pr",
-     tooltip = "Only used by 'Percent of price' mode. The ceiling defaults to 45 rather than the 15 this shipped with — 15 was measured on liquid daily charts and silently rejected every weekly consolidation.")
+     tooltip = "Only used by 'Percent of price' mode. The ceiling is 45: a lower one is measured on daily charts and rejects weekly consolidations.")
 maxRange = input.float(45.0, "max", minval = 0.5, step = 0.5, group = gBal, inline = "pr")
 minTaps  = input.int(4, "Min centre crossings", minval = 1, group = gBal,
      tooltip = "How many times price has to cross the window's midpoint before it counts as chopping around a centre.")
@@ -59,16 +49,16 @@ minAtr   = input.float(0.10, "Min bar range vs zone height", minval = 0, step = 
 maxBack  = input.int(30, "Max bars to stretch a zone back", minval = 5, maxval = 500, group = gBal,
      tooltip = "When a zone is born it walks backwards over the bars that still fit inside the rails, so the zone covers the consolidation from where it actually started rather than from where it was detected.")
 maxGrow  = input.float(1.10, "Zone may grow to × its birth height", minval = 1.0, maxval = 3.0, step = 0.05, group = gBal,
-     tooltip = "The hard cap on how far a zone may widen, both while walking backwards and while the rails track new wicks. Without it the rails only ever widen, and a wider rail makes a break less likely, which permits more widening — a ratchet that grows one zone until it swallows the whole chart and blocks every zone after it. 1.10 keeps a zone honest to the range it was born in.")
+     tooltip = "The hard cap on how far a zone may widen, both while walking backwards and while the rails track new wicks. Without a cap the rails only ever widen, which makes a break less likely, which permits more widening — a ratchet. 1.10 keeps a zone honest to the range it was born in.")
 trackHL  = input.bool(true, "Rails track the zone's true high and low", group = gBal,
      tooltip = "On: while price stays in balance the rails widen to hold every wick, so they always mark the real edges of the range. Off: the rails stay frozen at the levels they were born with.")
 
 // ── Spacing ──────────────────────────────────────────────────────────────────
 gSpc     = "Spacing"
 cooldown = input.int(8, "Cooldown bars after a zone ends", minval = 0, group = gSpc,
-     tooltip = "Stops a fresh zone forming the moment the last one breaks. It was 25, which on a weekly chart is six months — long enough that one bad zone's cooldown suppressed every real one after it.")
+     tooltip = "Stops a fresh zone forming the moment the last one breaks. Count it in bars of your chart's timeframe: 25 is five weeks on a daily but six months on a weekly.")
 maxOver  = input.float(65, "Max overlap with the last zone %", minval = 0, maxval = 100, step = 5, group = gSpc,
-     tooltip = "A new zone has to cover genuinely different prices than the one before it. Lower = stricter. It was 35, which is stricter than the market: after a range breaks and price works back into similar territory, that is a legitimate new zone, and 35 threw it away.")
+     tooltip = "A new zone has to cover genuinely different prices than the one before it. Lower = stricter. Too strict and a broken range that price works back into gets thrown away, though it is a legitimate new zone.")
 keepOld  = input.int(25, "Historical zones kept", minval = 0, maxval = 150, group = gSpc,
      tooltip = "Older zones are deleted past this count.")
 
@@ -88,7 +78,7 @@ gSty     = "Style"
 edgeCol  = input.color(#FFFFFF, "Rails",  group = gSty, inline = "c1")
 edgeWid  = input.int(2, "Width", minval = 1, maxval = 4, group = gSty, inline = "c1")
 showPanel= input.bool(true, "Draw the green panel", group = gSty,
-     tooltip = "Off leaves the white rails and the centre line on their own. Use it as the fallback if the panel misbehaves on your build — the rails are ordinary foreground drawings and do not depend on the behind-chart layer. See the note at the top of the script.")
+     tooltip = "Off leaves the white rails and centre line on their own. The fallback if the panel misbehaves on your build: rails are ordinary foreground drawings and do not use the behind-chart layer.")
 fillCol  = input.color(#0E3020, "Panel",  group = gSty, inline = "c2")
 fillT    = input.int(0, "Transparency", minval = 0, maxval = 100, group = gSty, inline = "c2",
      tooltip = "0 is solid, which is how it should look — the panel sits behind the candles, so it fills in as a background block rather than shading price.")
@@ -271,6 +261,16 @@ if not active and isBalance and roomForIt and not confirmUp and not confirmDn an
     railMid := showMid ? line.new(left, math.avg(bandHi, bandLo), bar_index + 1,
          math.avg(bandHi, bandLo), xloc = xloc.bar_index,
          color = color.new(edgeCol, 25), style = line.style_dashed) : na
+
+// ── Readout ──────────────────────────────────────────────────────────────────
+//  The zone's rails as numbers in the Data Window. display.data_window keeps
+//  them off the chart and out of the price scale, so they cost nothing visually.
+//  They are also a top-level plot, which means this script satisfies Pine's
+//  "an indicator must produce something" rule (CE10246) on its own, without
+//  depending on a drawing that only happens inside a conditional.
+plot(active ? bandHi : na, "Zone high",   display = display.data_window)
+plot(active ? bandLo : na, "Zone low",    display = display.data_window)
+plot(active ? math.avg(bandHi, bandLo) : na, "Zone centre", display = display.data_window)
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 alertcondition(confirmUp and not confirmUp[1], "Uranium break up",   "Uranium Band: confirmed break UP on {{ticker}}")
