@@ -40,28 +40,35 @@ indicator("Uranium Band", overlay = true,
 gBal     = "Balance detection"
 winLen   = input.int(14, "Balance window (bars)", minval = 3, group = gBal,
      tooltip = "The window that has to qualify as balance. Keep it well under the length of the consolidations you want caught — the zone itself is stretched back to the real start afterwards, so this does not set the zone's width.")
-persist  = input.int(4, "Bars balance must hold first", minval = 1, group = gBal,
-     tooltip = "The window has to stay in balance this many bars in a row before the zone is drawn. This is the main control for how many zones you get — raise it if the chart is busy, lower it if it misses one.")
-minRange = input.float(2.5,  "Min window range %", minval = 0.1, step = 0.1, group = gBal,
-     tooltip = "Movement floor — the window has to actually travel to count as balance rather than a dead tape.")
-maxRange = input.float(15.0, "Max window range %", minval = 0.5, step = 0.5, group = gBal,
-     tooltip = "Movement ceiling — above this the window is a trend leg, not balance. A real consolidation on a liquid daily chart runs about 8-12 percent, so 15 keeps the tall ranges out.")
+persist  = input.int(3, "Bars balance must hold first", minval = 1, group = gBal,
+     tooltip = "The window has to stay in balance this many bars in a row before the zone is drawn. This is the main control for how many zones you get — raise it if the chart is busy, lower it if it misses one. It was 4, which is one bar too many: the centre-crossing count flickers across its own threshold inside a real range, so a genuine consolidation rarely strings four clean bars together.")
+sizeMode = input.string("ATR multiples", "Balance size measured in",
+     options = ["ATR multiples", "Percent of price"], group = gBal,
+     tooltip = "ATR multiples travel across timeframes and symbols — the same setting works on a quiet daily chart and a violent weekly one, because the yardstick is the symbol's own bar range. Percent of price does not: a fixed percentage tuned on liquid daily charts rejects nearly every weekly consolidation, since a 14-week balance on a volatile name routinely spans 40 percent or more of price. Use percent only if you want a hard price-based ceiling.")
+minAtrR  = input.float(1.0, "Min window range (ATR)", minval = 0.1, step = 0.1, group = gBal, inline = "ar",
+     tooltip = "Movement floor and ceiling in ATR multiples. Over a 14-bar window the total path price walks is roughly 14 ATR, so a window whose high-to-low span is only 2-4 ATR has overlapped itself heavily — that is balance. A span approaching 7+ ATR means price kept going one way, which is a trend leg.")
+maxAtrR  = input.float(7.0, "max", minval = 0.5, step = 0.5, group = gBal, inline = "ar")
+minRange = input.float(2.5,  "Min window range %", minval = 0.1, step = 0.1, group = gBal, inline = "pr",
+     tooltip = "Only used by 'Percent of price' mode. The ceiling defaults to 45 rather than the 15 this shipped with — 15 was measured on liquid daily charts and silently rejected every weekly consolidation.")
+maxRange = input.float(45.0, "max", minval = 0.5, step = 0.5, group = gBal, inline = "pr")
 minTaps  = input.int(4, "Min centre crossings", minval = 1, group = gBal,
      tooltip = "How many times price has to cross the window's midpoint before it counts as chopping around a centre.")
 atrLen   = input.int(14, "ATR length", minval = 1, group = gBal)
 minAtr   = input.float(0.10, "Min bar range vs zone height", minval = 0, step = 0.01, group = gBal,
      tooltip = "Average bar range as a fraction of the zone's height. Filters out flat, dead windows that are technically 'in range' but have no movement in them.")
-maxBack  = input.int(120, "Max bars to stretch a zone back", minval = 10, maxval = 500, group = gBal,
-     tooltip = "When a zone is born it walks backwards over every bar that still fits inside the rails, so the zone covers the consolidation from where it actually started rather than from where it was detected.")
+maxBack  = input.int(30, "Max bars to stretch a zone back", minval = 5, maxval = 500, group = gBal,
+     tooltip = "When a zone is born it walks backwards over the bars that still fit inside the rails, so the zone covers the consolidation from where it actually started rather than from where it was detected.")
+maxGrow  = input.float(1.10, "Zone may grow to × its birth height", minval = 1.0, maxval = 3.0, step = 0.05, group = gBal,
+     tooltip = "The hard cap on how far a zone may widen, both while walking backwards and while the rails track new wicks. Without it the rails only ever widen, and a wider rail makes a break less likely, which permits more widening — a ratchet that grows one zone until it swallows the whole chart and blocks every zone after it. 1.10 keeps a zone honest to the range it was born in.")
 trackHL  = input.bool(true, "Rails track the zone's true high and low", group = gBal,
      tooltip = "On: while price stays in balance the rails widen to hold every wick, so they always mark the real edges of the range. Off: the rails stay frozen at the levels they were born with.")
 
 // ── Spacing ──────────────────────────────────────────────────────────────────
 gSpc     = "Spacing"
-cooldown = input.int(25, "Cooldown bars after a zone ends", minval = 0, group = gSpc,
-     tooltip = "Stops a fresh zone forming the moment the last one breaks.")
-maxOver  = input.float(35, "Max overlap with the last zone %", minval = 0, maxval = 100, step = 5, group = gSpc,
-     tooltip = "A new zone has to cover genuinely different prices than the one before it. Lower = stricter.")
+cooldown = input.int(8, "Cooldown bars after a zone ends", minval = 0, group = gSpc,
+     tooltip = "Stops a fresh zone forming the moment the last one breaks. It was 25, which on a weekly chart is six months — long enough that one bad zone's cooldown suppressed every real one after it.")
+maxOver  = input.float(65, "Max overlap with the last zone %", minval = 0, maxval = 100, step = 5, group = gSpc,
+     tooltip = "A new zone has to cover genuinely different prices than the one before it. Lower = stricter. It was 35, which is stricter than the market: after a range breaks and price works back into similar territory, that is a legitimate new zone, and 35 threw it away.")
 keepOld  = input.int(25, "Historical zones kept", minval = 0, maxval = 150, group = gSpc,
      tooltip = "Older zones are deleted past this count.")
 
@@ -108,7 +115,13 @@ crossUp   = close > winMid and close[1] <= winMid
 crossDn   = close < winMid and close[1] >= winMid
 taps      = math.sum(crossUp ? 1 : 0, winLen) + math.sum(crossDn ? 1 : 0, winLen)
 
-inBalance = rangePct >= minRange and rangePct <= maxRange and taps >= minTaps and atrOk
+//  the size gate, in whichever unit is selected
+useAtrSz  = sizeMode == "ATR multiples"
+rangeAtr  = atr > 0 ? winH / atr : 0.0
+sizeOk    = useAtrSz ? rangeAtr >= minAtrR and rangeAtr <= maxAtrR
+     : rangePct >= minRange and rangePct <= maxRange
+
+inBalance = sizeOk and taps >= minTaps and atrOk
 
 // balance has to hold for a few bars before it earns a zone
 var int balRun = 0
@@ -124,6 +137,7 @@ var line  railBot = na
 var line  railMid = na
 var float bandHi  = na
 var float bandLo  = na
+var float birthH  = na            // the height the zone was born with; caps all growth
 var float prevHi  = na
 var float prevLo  = na
 var bool  active  = false
@@ -189,10 +203,15 @@ if active
         prevHi  := bandHi
         prevLo  := bandLo
     else
-        // still in balance: hold every wick, but only while nothing has closed outside
-        if trackHL and outUp == 0 and outDn == 0
-            bandHi := math.max(bandHi, high)
-            bandLo := math.min(bandLo, low)
+        // Still in balance: hold every wick, but only while nothing has closed
+        // outside AND only while the zone stays inside its growth cap. The cap
+        // is what stops the ratchet — rails that only widen make a break ever
+        // less likely, which licenses more widening.
+        newHi = math.max(bandHi, high)
+        newLo = math.min(bandLo, low)
+        if trackHL and outUp == 0 and outDn == 0 and newHi - newLo <= birthH * maxGrow
+            bandHi := newHi
+            bandLo := newLo
             line.set_y1(railTop, bandHi)
             line.set_y2(railTop, bandHi)
             line.set_y1(railBot, bandLo)
@@ -220,6 +239,7 @@ roomForIt = overlap <= maxOver and (bar_index - lastEnd) >= cooldown
 if not active and isBalance and roomForIt and not confirmUp and not confirmDn and bar_index > winLen
     bandHi  := winHi
     bandLo  := winLo
+    birthH  := winHi - winLo
     active  := true
     //  walk back over the consolidation, letting the rails grow to hold each bar
     //  for as long as the whole range still reads as balance. This is what puts
@@ -230,7 +250,11 @@ if not active and isBalance and roomForIt and not confirmUp and not confirmDn an
         h2  = math.max(bandHi, nz(high[i], bandHi))
         l2  = math.min(bandLo, nz(low[i],  bandLo))
         mid2 = math.avg(h2, l2)
-        if na(high[i]) or mid2 <= 0 or (h2 - l2) / mid2 * 100 > maxRange
+        //  The walk stops the moment a bar would push the rails past the growth
+        //  cap. It used to stop on the detection ceiling instead — but that is a
+        //  test on a 14-bar window, and applying it to a 120-bar walk let one
+        //  zone swallow the entire chart.
+        if na(high[i]) or mid2 <= 0 or h2 - l2 > birthH * maxGrow
             break
         else
             bandHi := h2

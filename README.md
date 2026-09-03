@@ -42,7 +42,7 @@ so leaving them on by default would give you a different chart than the referenc
 | Gold Regime | MACD 12/26/9, trend 50, confirmation 10, ATR 14, sensitivity 5, swing filter on (lookback 20, age 5), cooldown 8, push 0.25 ATR, sequential confirmation on (window 4) | RSI side, volume, VWAP side, internals, HTF sync, regime agreement, streak table |
 | Carbon Structure | Hull band, HMA, length **55**, lag 2 bars, cloud transparency 30 | Two-baseline mode, centre line, compression fade |
 | Control Line | SMA 50, extra smoothing 3, dusty rose `#C0707E`, width 3 | Side tinting |
-| Uranium Band | Window 14, persist 4, range 2.5-15%, 4 centre crossings, cooldown 25, max overlap 35%, break 2 closes, rails track the true high/low, green panel on | Volume-gated breaks, rail recolour, projecting after a break |
+| Uranium Band | Window 14, persist 3, size 1.0-7.0 ATR, 4 centre crossings, cooldown 8, max overlap 65%, growth cap 1.10×, walk back 30, break 2 closes, rails track the true high/low, green panel on | Volume-gated breaks, rail recolour, projecting after a break |
 | Air Pocket | Fair value gap (3-bar), min 0.30% **and** 0.10 ATR, fully-closed fill, 20 open pockets | Session-only gaps, keeping filled pockets, size labels |
 | BB Trend Avg | Bollinger 20/2, flips on a close beyond the band, table top-right | The bands themselves — this script contributes the table |
 | Bark or Bite | ATR 14, 8 pullbacks remembered, bite at 1.4× the average, floor 2.0 ATR, volume required, memory clears on a bite | Bark markers, bar tinting |
@@ -178,6 +178,28 @@ so a wick or a single close outside widens the zone rather than leaving a rail t
 contains price; the moment a bar closes outside, the rails lock and the break clock starts. A
 break needs *N* consecutive closes outside, optionally past a buffer, and on confirmation the
 zone stops. Old zones are kept up to the limit you set, then deleted.
+
+**Why it drew nothing before.** Three gates were each mis-set, and together they produced
+zero zones across 87 weeks of HIMS on the weekly — a blank chart with the indicator loaded.
+Replayed against real bars:
+
+1. *The size ceiling was in the wrong unit.* It was a fixed 15% of price, measured on liquid
+   daily charts. The reference zone spans **50.3% of price** — rejected outright. Size is now
+   measured in ATR multiples (that window is 2.79 ATR, comfortably inside a 7.0 ceiling), so
+   the same setting works on a quiet daily chart and a violent weekly one.
+2. *Nothing capped a zone's growth.* The backward walk stopped on the detection ceiling — but
+   that is a test on a 14-bar window, and applying it to a 120-bar walk let one zone swallow
+   the entire chart (rails 23.97-72.98, Dec 2024 to Feb 2026). Rail tracking had the same
+   flaw in reverse: rails only ever widen, and a wider rail makes a break less likely, which
+   licenses more widening. A ratchet. Both are now capped at 1.10× the zone's birth height.
+3. *Persistence was one bar too many.* The centre-crossing count flickers across its own
+   threshold inside a real range, so a genuine consolidation rarely strings four clean bars
+   together — the current zone sat at exactly three. Persist is 3 now. Cooldown dropped from
+   25 bars (six months on a weekly) to 8, and max overlap from 35% to 65%, because a broken
+   range that price works back into is a legitimate new zone.
+
+With those, the simulated live zone is **23.36 - 39.05** against reference rails reading
+~24.0 - ~38.5, and three zones appear across the same 87 weeks instead of none.
 
 **If the zone vanishes when you mouse over it.** Hovering never re-runs a Pine script, so
 nothing in the logic can cause this — only the rendering can, and `behind_chart = true` is
